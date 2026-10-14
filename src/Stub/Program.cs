@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -159,6 +160,43 @@ namespace DKSelfExtractor
             return button;
         }
 
+        internal static void RunPostCommand(PackageInfo info, string destination)
+        {
+            if (String.IsNullOrWhiteSpace(info.PostCommand)) return;
+
+            string scriptPath = Path.ChangeExtension(Package.TempPath(),
+                                                      info.CommandShell == 1 ? ".cmd" : ".ps1");
+            try
+            {
+                File.WriteAllText(scriptPath, info.PostCommand,
+                                  info.CommandShell == 1 ? Encoding.Default : new UTF8Encoding(true));
+                string executable = info.CommandShell == 1
+                    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe")
+                    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
+                                   "WindowsPowerShell", "v1.0", "powershell.exe");
+                string arguments = info.CommandShell == 1
+                    ? "/D /S /C \"\"" + scriptPath + "\"\""
+                    : "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + scriptPath + "\"";
+                var start = new ProcessStartInfo {
+                    FileName = executable,
+                    Arguments = arguments,
+                    WorkingDirectory = Path.GetFullPath(Environment.ExpandEnvironmentVariables(destination)),
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using (var process = Process.Start(start))
+                {
+                    process.WaitForExit();
+                    if (process.ExitCode != 0)
+                        throw new InvalidOperationException("작업 후 명령줄 실패 (종료 코드 " + process.ExitCode + ")");
+                }
+            }
+            finally
+            {
+                if (File.Exists(scriptPath)) File.Delete(scriptPath);
+            }
+        }
+
         private void BeginExtract()
         {
             string path = destination.Text.Trim();
@@ -194,14 +232,22 @@ namespace DKSelfExtractor
                     });
                 }
                 finally { if (File.Exists(temporary)) File.Delete(temporary); }
+                if (!String.IsNullOrWhiteSpace(package.PostCommand))
+                {
+                    if (IsHandleCreated && !IsDisposed)
+                        BeginInvoke(new Action(() => status.Text = "작업 후 명령줄 실행 중..."));
+                    RunPostCommand(package, path);
+                }
             }).ContinueWith(task =>
             {
                 extract.Enabled = true;
                 progress.Visible = false;
                 if (task.IsFaulted)
                 {
-                    status.Text = "압축 해제 실패";
-                    MessageBox.Show(this, task.Exception.GetBaseException().Message, "압축 해제 실패",
+                    string error = task.Exception.GetBaseException().Message;
+                    status.Text = error.StartsWith("작업 후 명령줄", StringComparison.Ordinal)
+                        ? "작업 후 명령줄 실패" : "압축 해제 실패";
+                    MessageBox.Show(this, error, status.Text,
                                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 else

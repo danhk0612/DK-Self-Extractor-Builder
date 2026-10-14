@@ -23,7 +23,8 @@ namespace DKSelfExtractor
     internal sealed class BuilderForm : Form
     {
         private readonly ListView sources;
-        private readonly TextBox output, destination, note, password, title;
+        private readonly TextBox output, destination, note, password, title, postCommand;
+        private readonly ComboBox commandShell;
         private readonly ComboBox compression;
         private readonly Button create;
         private readonly Label status;
@@ -110,7 +111,7 @@ namespace DKSelfExtractor
             advancedToggle.BackColor = Color.FromArgb(241, 239, 246);
 
             advancedPanel = new Panel {
-                Bounds = new Rectangle(14, 319, 532, 187),
+                Bounds = new Rectangle(14, 319, 532, 332),
                 BackColor = BackColor, Visible = false
             };
             Controls.Add(advancedPanel);
@@ -139,6 +140,21 @@ namespace DKSelfExtractor
             note.Height = 58;
             note.AcceptsReturn = true;
 
+            AddLabel("작업 후 명령줄", 197, 0, 280, advancedPanel);
+            commandShell = new ComboBox {
+                Location = new Point(404, 194), Size = new Size(128, 25),
+                DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 9f)
+            };
+            commandShell.Items.AddRange(new object[] { "CMD", "PowerShell" });
+            commandShell.SelectedIndex = 0;
+            advancedPanel.Controls.Add(commandShell);
+            postCommand = AddInput(224, 532, 0, advancedPanel);
+            postCommand.Multiline = true;
+            postCommand.ScrollBars = ScrollBars.Vertical;
+            postCommand.AcceptsReturn = true;
+            postCommand.Height = 105;
+
             create = AddButton("생성", 425, 327, 121, delegate { BeginBuild(); });
             create.Height = 30;
             create.BackColor = Color.FromArgb(53, 46, 89);
@@ -161,7 +177,7 @@ namespace DKSelfExtractor
         {
             advancedPanel.Visible = expanded;
             advancedToggle.Text = expanded ? "▾ 고급" : "▸ 고급";
-            create.Top = expanded ? 516 : 327;
+            create.Top = expanded ? 662 : 327;
             status.Top = create.Top + 5;
             ClientSize = new Size(560, create.Bottom + 13);
         }
@@ -295,6 +311,8 @@ namespace DKSelfExtractor
             string comment = note.Text;
             string secret = password.Text;
             string caption = title.Text.Trim();
+            string commands = postCommand.Text;
+            byte shell = (byte)(commandShell.SelectedIndex + 1);
             int level = compression.SelectedIndex;
             if (items.Length == 0 || String.IsNullOrWhiteSpace(target))
             {
@@ -327,7 +345,7 @@ namespace DKSelfExtractor
 
             create.Enabled = false;
             status.Text = "압축 및 EXE 생성 중...";
-            Task.Run(() => Build(items, exe, target, comment, secret, level, caption))
+            Task.Run(() => Build(items, exe, target, comment, secret, level, caption, shell, commands))
                 .ContinueWith(task =>
                 {
                     create.Enabled = true;
@@ -347,7 +365,8 @@ namespace DKSelfExtractor
         }
 
         private static void Build(string[] sourcePaths, string targetExe, string extractPath,
-                                  string memo, string password, int level, string caption)
+                                  string memo, string password, int level, string caption,
+                                  byte commandShell, string postCommand)
         {
             string zip = Package.TempPath();
             string stub = Package.TempPath();
@@ -365,7 +384,7 @@ namespace DKSelfExtractor
                 }
                 Package.WriteExe(stub, zip, assembled,
                     String.IsNullOrWhiteSpace(caption) ? Path.GetFileNameWithoutExtension(targetExe) : caption,
-                    extractPath, memo, password);
+                    extractPath, memo, password, commandShell, postCommand);
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(targetExe)));
                 File.Copy(assembled, targetExe, true);
             }
