@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Drawing;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -21,7 +22,8 @@ namespace DKSelfExtractor
 
     internal sealed class BuilderForm : Form
     {
-        private readonly TextBox source, output, destination, note, password;
+        private readonly ListView sources;
+        private readonly TextBox output, destination, note, password;
         private readonly ComboBox compression;
         private readonly Button create;
         private readonly Label status;
@@ -29,7 +31,7 @@ namespace DKSelfExtractor
         internal BuilderForm()
         {
             Text = "DK Self Extractor Builder";
-            ClientSize = new Size(700, 647);
+            ClientSize = new Size(695, 592);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -37,47 +39,63 @@ namespace DKSelfExtractor
             Font = new Font("Segoe UI", 10f);
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
-            var heading = new Panel { Bounds = new Rectangle(0, 0, 700, 103), BackColor = Color.White };
-            Controls.Add(heading);
-            heading.Controls.Add(new Label {
-                Text = "Self Extractor Builder", Font = new Font("Segoe UI Semibold", 20f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(29, 41, 64), Bounds = new Rectangle(30, 19, 620, 38)
-            });
-            heading.Controls.Add(new Label {
-                Text = "폴더를 하나의 자동 압축 해제 EXE로 만듭니다.",
-                ForeColor = Color.FromArgb(107, 119, 139), Bounds = new Rectangle(32, 62, 620, 23)
-            });
-
-            AddLabel("원본 폴더", 127);
-            source = AddInput(158, 510);
-            AddButton("찾아보기", 558, 158, 110, delegate {
-                using (var dialog = new FolderBrowserDialog { Description = "EXE로 묶을 폴더 선택" })
-                {
+            AddLabel("파일 / 폴더", 19, 24, 250);
+            AddButton("파일 추가", 313, 11, 105, delegate
+            {
+                using (var dialog = new OpenFileDialog {
+                    Title = "파일 추가 (Ctrl/Shift로 여러 파일 선택)",
+                    Filter = "모든 파일 (*.*)|*.*", Multiselect = true
+                })
                     if (dialog.ShowDialog(this) == DialogResult.OK)
-                    {
-                        source.Text = dialog.SelectedPath;
-                        string name = Path.GetFileName(dialog.SelectedPath.TrimEnd('\\'));
-                        if (String.IsNullOrWhiteSpace(output.Text))
-                            output.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), name + ".exe");
-                        if (String.IsNullOrWhiteSpace(destination.Text))
-                            destination.Text = @"%USERPROFILE%\Downloads\" + name;
-                    }
+                        AddSources(dialog.FileNames);
+            });
+            AddButton("폴더 추가", 423, 11, 105, delegate
+            {
+                try { AddSources(MultiFolderPicker.Choose(Handle)); }
+                catch (Exception error)
+                {
+                    MessageBox.Show(this, error.Message, "폴더 선택 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             });
+            AddButton("선택 제거", 533, 11, 138, delegate
+            {
+                foreach (ListViewItem item in sources.SelectedItems.Cast<ListViewItem>().ToArray())
+                    sources.Items.Remove(item);
+            });
 
-            AddLabel("저장할 EXE 파일", 204);
-            output = AddInput(235, 510);
-            AddButton("저장 위치", 558, 235, 110, delegate {
-                using (var dialog = new SaveFileDialog { Filter = "실행 파일 (*.exe)|*.exe", FileName = Path.GetFileName(output.Text), AddExtension = true })
+            sources = new ListView {
+                Bounds = new Rectangle(24, 54, 647, 211),
+                View = View.Details, FullRowSelect = true, MultiSelect = true,
+                GridLines = false, HideSelection = false,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.White, ForeColor = Color.FromArgb(48, 61, 82),
+                Font = new Font("Segoe UI", 9.5f)
+            };
+            sources.Columns.Add("종류", 65);
+            sources.Columns.Add("이름", 177);
+            sources.Columns.Add("원본 경로", 382);
+            Controls.Add(sources);
+
+            AddLabel("저장할 EXE 파일 (미지정 시 자동 생성)", 284);
+            output = AddInput(310, 518);
+            AddButton("저장 위치", 555, 309, 116, delegate
+            {
+                string suggested = output.Text.Trim();
+                if (suggested.Length == 0 && sources.Items.Count > 0)
+                    suggested = DefaultExePath(SourcePaths());
+                using (var dialog = new SaveFileDialog {
+                    Filter = "실행 파일 (*.exe)|*.exe", FileName = Path.GetFileName(suggested),
+                    InitialDirectory = Path.GetDirectoryName(suggested), AddExtension = true
+                })
                     if (dialog.ShowDialog(this) == DialogResult.OK) output.Text = dialog.FileName;
             });
 
-            AddLabel("압축 해제 기본 경로", 281);
-            destination = AddInput(312, 638);
+            AddLabel("압축 해제 기본 경로", 354);
+            destination = AddInput(380, 647);
 
-            AddLabel("압축률", 360);
+            AddLabel("압축률", 423, 24, 220);
             compression = new ComboBox {
-                Location = new Point(30, 391), Size = new Size(250, 30),
+                Location = new Point(24, 450), Size = new Size(215, 30),
                 DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 10f)
             };
@@ -85,38 +103,83 @@ namespace DKSelfExtractor
             compression.SelectedIndex = 2;
             Controls.Add(compression);
 
-            AddLabel("암호 (비워두면 사용하지 않음)", 436);
-            password = AddInput(467, 300);
+            AddLabel("암호 (선택)", 423, 251, 178);
+            password = AddInput(450, 191, 251);
             password.UseSystemPasswordChar = true;
 
-            AddLabel("메모 / 안내 문구", 436, 366);
-            note = AddInput(467, 302, 366);
-            note.Text = "";
+            AddLabel("메모 (선택)", 423, 454, 217);
+            note = AddInput(450, 217, 454);
 
-            create = AddButton("EXE 생성", 30, 540, 638, delegate { BeginBuild(); });
-            create.Height = 45;
+            create = AddButton("EXE 생성", 24, 510, 647, delegate { BeginBuild(); });
+            create.Height = 43;
             create.BackColor = Color.FromArgb(48, 99, 224);
             create.ForeColor = Color.White;
             create.Font = new Font("Segoe UI Semibold", 11f, FontStyle.Bold);
 
             status = new Label {
-                Text = "압축 파일에 별도 압축 프로그램은 필요하지 않습니다.",
-                ForeColor = Color.FromArgb(94, 109, 130),
-                Bounds = new Rectangle(30, 600, 638, 28), AutoEllipsis = true
+                Text = "", ForeColor = Color.FromArgb(94, 109, 130),
+                Bounds = new Rectangle(24, 565, 647, 24), AutoEllipsis = true
             };
             Controls.Add(status);
         }
 
-        private void AddLabel(string text, int y, int x = 30)
+        private void AddSources(string[] paths)
+        {
+            if (paths == null || paths.Length == 0) return;
+            bool wasEmpty = sources.Items.Count == 0;
+            foreach (string path in paths)
+            {
+                string full = Path.GetFullPath(path);
+                if (sources.Items.Cast<ListViewItem>().Any(item =>
+                    String.Equals((string)item.Tag, full, StringComparison.OrdinalIgnoreCase))) continue;
+                bool folder = Directory.Exists(full);
+                if (!folder && !File.Exists(full)) continue;
+                string name = Path.GetFileName(full.TrimEnd('\\', '/'));
+                var itemToAdd = new ListViewItem(folder ? "폴더" : "파일");
+                itemToAdd.SubItems.Add(name);
+                itemToAdd.SubItems.Add(full);
+                itemToAdd.Tag = full;
+                sources.Items.Add(itemToAdd);
+            }
+            if (wasEmpty && sources.Items.Count > 0 && String.IsNullOrWhiteSpace(destination.Text))
+            {
+                string first = (string)sources.Items[0].Tag;
+                string folder = Directory.Exists(first) ? first : Path.GetDirectoryName(first);
+                destination.Text = @"%USERPROFILE%\Downloads\" + Path.GetFileName(folder.TrimEnd('\\', '/'));
+            }
+        }
+
+        private string[] SourcePaths()
+        {
+            return sources.Items.Cast<ListViewItem>().Select(item => (string)item.Tag).ToArray();
+        }
+
+        // When output is blank, name the EXE after the first source folder and
+        // place it beside that folder. For a file, use its containing folder.
+        internal static string DefaultExePath(string[] paths)
+        {
+            if (paths == null || paths.Length == 0)
+                throw new ArgumentException("추가할 파일 또는 폴더가 없습니다.");
+            string first = Path.GetFullPath(paths[0]);
+            string folder = Directory.Exists(first) ? first : Path.GetDirectoryName(first);
+            string trimmed = folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string parent = Path.GetDirectoryName(trimmed);
+            string name = Path.GetFileName(trimmed);
+            if (String.IsNullOrEmpty(parent) || String.IsNullOrEmpty(name))
+                throw new ArgumentException("기본 EXE 저장 위치를 결정할 수 없습니다. 저장 위치를 직접 지정하세요.");
+            return Path.Combine(parent, name + ".exe");
+        }
+
+        private void AddLabel(string label, int y, int x = 24, int width = 350)
         {
             Controls.Add(new Label {
-                Text = text, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
+                Text = label, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(64, 79, 105),
-                Location = new Point(x, y), Size = new Size(302, 25)
+                Location = new Point(x, y), Size = new Size(width, 24)
             });
         }
 
-        private TextBox AddInput(int y, int width, int x = 30)
+        private TextBox AddInput(int y, int width, int x = 24)
         {
             var item = new TextBox {
                 Location = new Point(x, y), Size = new Size(width, 29),
@@ -130,10 +193,9 @@ namespace DKSelfExtractor
         private Button AddButton(string text, int x, int y, int width, EventHandler handler)
         {
             var button = new Button {
-                Text = text, Bounds = new Rectangle(x, y, width, 31),
+                Text = text, Bounds = new Rectangle(x, y, width, 32),
                 FlatStyle = FlatStyle.Flat, BackColor = Color.White,
-                ForeColor = Color.FromArgb(48, 70, 107),
-                Cursor = Cursors.Hand
+                ForeColor = Color.FromArgb(48, 70, 107), Cursor = Cursors.Hand
             };
             button.FlatAppearance.BorderColor = Color.FromArgb(213, 220, 232);
             button.Click += handler;
@@ -143,27 +205,33 @@ namespace DKSelfExtractor
 
         private void BeginBuild()
         {
-            string src = source.Text.Trim();
-            string exe = output.Text.Trim();
+            string[] items = SourcePaths();
             string target = destination.Text.Trim();
+            string exe = output.Text.Trim();
             string comment = note.Text;
             string secret = password.Text;
             int level = compression.SelectedIndex;
-            if (!Directory.Exists(src) || String.IsNullOrWhiteSpace(exe) || String.IsNullOrWhiteSpace(target))
+            if (items.Length == 0 || String.IsNullOrWhiteSpace(target))
             {
-                MessageBox.Show(this, "원본 폴더, EXE 저장 위치, 압축 해제 경로를 확인하세요.", "입력 확인",
+                MessageBox.Show(this, "파일 또는 폴더를 추가하고 압축 해제 경로를 확인하세요.", "입력 확인",
                                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             try
             {
-                string fullSource = Path.GetFullPath(src).TrimEnd('\\') + "\\";
-                string fullOutput = Path.GetFullPath(exe);
-                if (!fullOutput.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                if (exe.Length == 0) exe = DefaultExePath(items);
+                exe = Path.GetFullPath(exe);
+                if (!exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                     throw new ArgumentException("출력 파일은 .exe 확장자를 사용해야 합니다.");
-                if (fullOutput.StartsWith(fullSource, StringComparison.OrdinalIgnoreCase))
-                    throw new ArgumentException("출력 EXE를 원본 폴더 내부에 저장할 수 없습니다.");
-                if (File.Exists(fullOutput) && MessageBox.Show(this, "기존 EXE를 덮어쓰시겠습니까?",
+                foreach (string item in items)
+                {
+                    string full = Path.GetFullPath(item);
+                    if (String.Equals(exe, full, StringComparison.OrdinalIgnoreCase) ||
+                        (Directory.Exists(full) && exe.StartsWith(
+                            full.TrimEnd('\\', '/') + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+                        throw new ArgumentException("출력 EXE를 선택한 원본 파일 또는 폴더 내부에 저장할 수 없습니다.");
+                }
+                if (File.Exists(exe) && MessageBox.Show(this, "기존 EXE를 덮어쓰시겠습니까?",
                     "기존 파일", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             }
             catch (Exception error)
@@ -174,7 +242,7 @@ namespace DKSelfExtractor
 
             create.Enabled = false;
             status.Text = "압축 및 EXE 생성 중...";
-            Task.Run(() => Build(src, exe, target, comment, secret, level))
+            Task.Run(() => Build(items, exe, target, comment, secret, level))
                 .ContinueWith(task =>
                 {
                     create.Enabled = true;
@@ -193,7 +261,7 @@ namespace DKSelfExtractor
                 }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
-        private static void Build(string sourcePath, string targetExe, string extractPath,
+        private static void Build(string[] sourcePaths, string targetExe, string extractPath,
                                   string memo, string password, int level)
         {
             string zip = Package.TempPath();
@@ -203,12 +271,12 @@ namespace DKSelfExtractor
             {
                 CompressionLevel compression = level == 0 ? CompressionLevel.NoCompression
                     : level == 1 ? CompressionLevel.Fastest : CompressionLevel.Optimal;
-                Package.CreateZip(sourcePath, zip, compression);
+                Package.CreateZip(sourcePaths, zip, compression);
                 using (var embedded = Assembly.GetExecutingAssembly().GetManifestResourceStream("DKSelfExtractor.Stub.exe"))
                 {
                     if (embedded == null) throw new InvalidOperationException("압축 해제 실행 파일이 내장되지 않았습니다.");
-                    using (var output = new FileStream(stub, FileMode.CreateNew, FileAccess.Write))
-                        Package.Copy(embedded, output);
+                    using (var outputStream = new FileStream(stub, FileMode.CreateNew, FileAccess.Write))
+                        Package.Copy(embedded, outputStream);
                 }
                 Package.WriteExe(stub, zip, assembled, Path.GetFileNameWithoutExtension(targetExe), extractPath, memo, password);
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(targetExe)));
