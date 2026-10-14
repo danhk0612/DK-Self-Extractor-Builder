@@ -33,44 +33,43 @@ namespace DKSelfExtractor
         internal BuilderForm()
         {
             Text = "DK Self Extractor Builder";
-            ClientSize = new Size(695, 508);
+            ClientSize = new Size(560, 370);
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Color.FromArgb(248, 247, 251);
-            Font = new Font("Segoe UI", 10f);
+            BackColor = Color.FromArgb(250, 249, 252);
+            Font = new Font("Segoe UI", 9f);
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
-            AddLabel("항목", 22, 24, 285);
-            AddButton("파일", 313, 15, 105, delegate
+            AddLabel("항목", 15, 14, 150);
+            AddButton("파일", 310, 11, 73, delegate
             {
                 using (var dialog = new OpenFileDialog {
-                    Title = "파일 선택",
-                    Filter = "모든 파일 (*.*)|*.*", Multiselect = true
+                    Title = "파일 선택", Filter = "모든 파일 (*.*)|*.*", Multiselect = true
                 })
                     if (dialog.ShowDialog(this) == DialogResult.OK)
                         AddSources(dialog.FileNames);
             });
-            AddButton("폴더", 423, 15, 105, delegate
+            AddButton("폴더", 390, 11, 73, delegate
             {
                 try { AddSources(MultiFolderPicker.Choose(Handle)); }
                 catch (Exception error)
                 {
-                    MessageBox.Show(this, error.Message, "폴더 선택 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(this, error.Message, "폴더 선택 실패",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             });
-            AddButton("제거", 533, 15, 138, delegate { RemoveSelectedSources(); });
+            AddButton("제거", 470, 11, 76, delegate { RemoveSelectedSources(); });
 
             sources = new ListView {
-                Bounds = new Rectangle(24, 57, 647, 166),
+                Bounds = new Rectangle(14, 43, 532, 127),
                 View = View.Details, FullRowSelect = true, MultiSelect = true,
                 GridLines = false, HideSelection = false,
                 BorderStyle = BorderStyle.FixedSingle,
                 BackColor = Color.White, ForeColor = Color.FromArgb(53, 46, 89),
-                Font = new Font("Segoe UI", 9.5f)
+                Font = new Font("Segoe UI", 9f)
             };
-            // Explorer file/folder drops are handled both on the list and unused form surface.
             AllowDrop = true;
             sources.AllowDrop = true;
             DragEnter += OnSourceDragEnter;
@@ -79,74 +78,77 @@ namespace DKSelfExtractor
             sources.DragDrop += OnSourceDragDrop;
             sources.KeyDown += OnSourceKeyDown;
 
-            sources.Columns.Add("유형", 65);
-            sources.Columns.Add("이름", 177);
-            sources.Columns.Add("경로", 382);
+            sources.Columns.Add("유형", 54);
+            sources.Columns.Add("이름", 138);
+            sources.Columns.Add("경로", 315);
             Controls.Add(sources);
 
-            AddLabel("EXE 경로", 244);
-            output = AddInput(271, 518);
-            AddButton("찾기", 555, 270, 116, delegate
+            AddLabel("EXE 경로", 176);
+            output = AddInput(197, 439);
+            AddButton("찾기", 460, 196, 86, delegate
             {
                 string suggested = output.Text.Trim();
                 if (suggested.Length == 0 && sources.Items.Count > 0)
                     suggested = DefaultExePath(SourcePaths());
                 using (var dialog = new SaveFileDialog {
-                    Filter = "실행 파일 (*.exe)|*.exe", FileName = Path.GetFileName(suggested),
-                    InitialDirectory = Path.GetDirectoryName(suggested), AddExtension = true
+                    Filter = "실행 파일 (*.exe)|*.exe",
+                    FileName = Path.GetFileName(suggested),
+                    InitialDirectory = Path.GetDirectoryName(suggested),
+                    AddExtension = true
                 })
-                    if (dialog.ShowDialog(this) == DialogResult.OK) output.Text = dialog.FileName;
+                    if (dialog.ShowDialog(this) == DialogResult.OK)
+                        output.Text = dialog.FileName;
             });
 
-            AddLabel("해제 경로", 313);
-            destination = AddInput(340, 647);
+            AddLabel("해제 경로", 230);
+            destination = AddInput(251, 532);
 
-            advancedToggle = AddButton("▸ 고급", 24, 382, 647, delegate
-            {
+            advancedToggle = AddButton("▸ 고급", 14, 286, 532, delegate {
                 SetAdvanced(!advancedPanel.Visible);
             });
             advancedToggle.TextAlign = ContentAlignment.MiddleLeft;
-            advancedToggle.BackColor = Color.FromArgb(238, 235, 245);
-            advancedToggle.FlatAppearance.MouseOverBackColor = Color.FromArgb(222, 216, 236);
+            advancedToggle.BackColor = Color.FromArgb(241, 239, 246);
 
             advancedPanel = new Panel {
-                Bounds = new Rectangle(24, 422, 647, 167),
+                Bounds = new Rectangle(14, 319, 532, 143),
                 BackColor = BackColor, Visible = false
             };
             Controls.Add(advancedPanel);
 
-            AddLabel("압축률", 0, 0, 225, advancedPanel);
+            AddLabel("압축률", 0, 0, 190, advancedPanel);
             compression = new ComboBox {
-                Location = new Point(0, 26), Size = new Size(233, 30),
+                Location = new Point(0, 21), Size = new Size(194, 27),
                 DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10f)
+                Font = new Font("Segoe UI", 9f)
             };
             compression.Items.AddRange(new object[] { "무압축", "빠름", "최적" });
             compression.SelectedIndex = 2;
             advancedPanel.Controls.Add(compression);
 
-            AddLabel("암호", 0, 247, 400, advancedPanel);
-            password = AddInput(26, 400, 247, advancedPanel);
+            AddLabel("암호", 0, 207, 325, advancedPanel);
+            password = AddInput(21, 325, 207, advancedPanel);
             password.UseSystemPasswordChar = true;
 
-            AddLabel("메모", 66, 0, 340, advancedPanel);
-            note = AddInput(90, 647, 0, advancedPanel);
+            AddLabel("메모", 59, 0, 200, advancedPanel);
+            note = AddInput(79, 532, 0, advancedPanel);
             note.Multiline = true;
             note.ScrollBars = ScrollBars.Vertical;
-            note.Height = 76;
+            note.Height = 63;
             note.AcceptsReturn = true;
 
-            create = AddButton("생성", 24, 424, 647, delegate { BeginBuild(); });
-            create.Height = 43;
+            create = AddButton("생성", 425, 327, 121, delegate { BeginBuild(); });
+            create.Height = 30;
             create.BackColor = Color.FromArgb(53, 46, 89);
             create.ForeColor = Color.White;
-            create.Font = new Font("Segoe UI Semibold", 11f, FontStyle.Bold);
+            create.Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold);
+            create.FlatAppearance.BorderSize = 0;
             create.FlatAppearance.MouseOverBackColor = Color.FromArgb(68, 58, 109);
             create.FlatAppearance.MouseDownBackColor = Color.FromArgb(43, 36, 74);
 
             status = new Label {
-                Text = "", ForeColor = Color.FromArgb(110, 102, 131),
-                Bounds = new Rectangle(24, 475, 647, 24), AutoEllipsis = true
+                Text = "", ForeColor = Color.FromArgb(100, 94, 115),
+                Bounds = new Rectangle(14, 332, 400, 21),
+                AutoEllipsis = true
             };
             Controls.Add(status);
             SetAdvanced(false);
@@ -156,9 +158,9 @@ namespace DKSelfExtractor
         {
             advancedPanel.Visible = expanded;
             advancedToggle.Text = expanded ? "▾ 고급" : "▸ 고급";
-            create.Top = expanded ? 594 : 423;
-            status.Top = create.Bottom + 9;
-            ClientSize = new Size(695, status.Bottom + 12);
+            create.Top = expanded ? 473 : 327;
+            status.Top = create.Top + 5;
+            ClientSize = new Size(560, create.Bottom + 13);
         }
 
         private void OnSourceDragEnter(object sender, DragEventArgs e)
@@ -240,20 +242,22 @@ namespace DKSelfExtractor
             return Path.Combine(parent, name + ".exe");
         }
 
-        private void AddLabel(string label, int y, int x = 24, int width = 350, Control parent = null)
+        private void AddLabel(string label, int y, int x = 14, int width = 300, Control parent = null)
         {
             (parent ?? this).Controls.Add(new Label {
-                Text = label, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(68, 59, 96),
-                Location = new Point(x, y), Size = new Size(width, 24)
+                Text = label,
+                Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(53, 46, 89),
+                Location = new Point(x, y), Size = new Size(width, 18)
             });
         }
 
-        private TextBox AddInput(int y, int width, int x = 24, Control parent = null)
+        private TextBox AddInput(int y, int width, int x = 14, Control parent = null)
         {
             var item = new TextBox {
-                Location = new Point(x, y), Size = new Size(width, 29),
-                Font = new Font("Segoe UI", 10f), BorderStyle = BorderStyle.FixedSingle,
+                Location = new Point(x, y), Size = new Size(width, 25),
+                Font = new Font("Segoe UI", 9f),
+                BorderStyle = BorderStyle.FixedSingle,
                 BackColor = Color.White, ForeColor = Color.FromArgb(53, 46, 89)
             };
             (parent ?? this).Controls.Add(item);
@@ -262,18 +266,19 @@ namespace DKSelfExtractor
 
         private Button AddButton(string text, int x, int y, int width, EventHandler handler)
         {
-            var background = Color.FromArgb(235, 231, 244);
-            var hover = Color.FromArgb(218, 211, 236);
             var button = new Button {
-                Text = text, Bounds = new Rectangle(x, y, width, 34),
-                FlatStyle = FlatStyle.Flat, BackColor = background,
-                ForeColor = Color.FromArgb(53, 46, 89), Cursor = Cursors.Hand,
-                Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
+                Text = text, Bounds = new Rectangle(x, y, width, 27),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(244, 242, 248),
+                ForeColor = Color.FromArgb(53, 46, 89),
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9f),
                 UseVisualStyleBackColor = false
             };
-            button.FlatAppearance.BorderSize = 0;
-            button.FlatAppearance.MouseOverBackColor = hover;
-            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(200, 191, 223);
+            button.FlatAppearance.BorderSize = 1;
+            button.FlatAppearance.BorderColor = Color.FromArgb(217, 213, 227);
+            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(230, 225, 240);
+            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(211, 204, 228);
             button.Click += handler;
             Controls.Add(button);
             return button;
