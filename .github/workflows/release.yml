@@ -19,15 +19,15 @@ jobs:
       - name: Verify before release
         shell: powershell
         run: .\smoke.ps1
-      - name: Publish v0.1.6
+      - name: Publish v0.1.7
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view v0.1.6 --repo $env:GITHUB_REPOSITORY *> $null
+          gh release view v0.1.7 --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "v0.1.6 already published; leaving existing release unchanged."
+            Write-Host "v0.1.7 already published; leaving existing release unchanged."
             exit 0
           }
-          gh release create v0.1.6 "./src/Builder/bin/Release/DK-Self-Extractor-Builder.exe" --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "v0.1.6" --notes "Show a visible interactive CMD or PowerShell console while post-extraction commands execute. New default-checked Post-run option sits beside Open folder; users can uncheck to skip commands, and the option is disabled if no command is embedded. Preserve exit-code handling and SFX format."
+          gh release create v0.1.7 "./src/Builder/bin/Release/DK-Self-Extractor-Builder.exe" --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "v0.1.7" --notes "Expandable editable post-extraction command panel in generated EXEs when commands are configured. Edits apply at run time; CMD and PowerShell stay visible and complete without nonzero exit-code checks. Other SFX functionality and archive format remain unchanged."
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed." }

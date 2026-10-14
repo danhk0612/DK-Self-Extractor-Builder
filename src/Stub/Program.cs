@@ -29,7 +29,10 @@ namespace DKSelfExtractor
         private readonly PackageInfo package;
         private readonly TextBox destination, password;
         private readonly CheckBox overwrite, openAfterExtract, runAfterExtract;
-        private readonly Button extract;
+        private readonly Button extract, commandToggle;
+        private readonly Panel commandPanel;
+        private readonly TextBox commandEditor;
+        private readonly int collapsedHeight;
         private readonly Label status;
         private readonly ProgressBar progress;
 
@@ -133,7 +136,42 @@ namespace DKSelfExtractor
                 Style = ProgressBarStyle.Continuous, Visible = false
             };
             Controls.Add(progress);
-            ClientSize = new Size(410, footer + 46);
+            if (hasPostCommand)
+            {
+                commandToggle = AddButton("▸ 작업 후 명령줄", 14, footer + 46, 382, 26,
+                                          delegate { SetCommandExpanded(!commandPanel.Visible); }, false);
+                commandToggle.TextAlign = ContentAlignment.MiddleLeft;
+                commandPanel = new Panel {
+                    Bounds = new Rectangle(14, footer + 77, 382, 125),
+                    BackColor = BackColor,
+                    Visible = false
+                };
+                commandEditor = new TextBox {
+                    Text = info.PostCommand,
+                    Bounds = new Rectangle(0, 0, 382, 125),
+                    Multiline = true, AcceptsReturn = true,
+                    AcceptsTab = true, ScrollBars = ScrollBars.Both,
+                    WordWrap = false, BorderStyle = BorderStyle.FixedSingle,
+                    Font = new Font("Consolas", 9f),
+                    BackColor = Color.White, ForeColor = Color.FromArgb(53, 46, 89)
+                };
+                commandPanel.Controls.Add(commandEditor);
+                Controls.Add(commandPanel);
+                collapsedHeight = footer + 81;
+            }
+            else
+            {
+                collapsedHeight = footer + 46;
+            }
+            ClientSize = new Size(410, collapsedHeight);
+        }
+
+        private void SetCommandExpanded(bool expanded)
+        {
+            if (commandToggle == null) return;
+            commandPanel.Visible = expanded;
+            commandToggle.Text = expanded ? "▾ 작업 후 명령줄" : "▸ 작업 후 명령줄";
+            ClientSize = new Size(410, expanded ? commandPanel.Bottom + 12 : collapsedHeight);
         }
 
         private void AddLabel(string content, int y)
@@ -168,21 +206,21 @@ namespace DKSelfExtractor
             return button;
         }
 
-        internal static void RunPostCommand(PackageInfo info, string destination)
+        internal static void RunPostCommand(byte commandShell, string command, string destination)
         {
-            if (String.IsNullOrWhiteSpace(info.PostCommand)) return;
+            if (String.IsNullOrWhiteSpace(command)) return;
 
             string scriptPath = Path.ChangeExtension(Package.TempPath(),
-                                                      info.CommandShell == 1 ? ".cmd" : ".ps1");
+                                                      commandShell == 1 ? ".cmd" : ".ps1");
             try
             {
-                File.WriteAllText(scriptPath, info.PostCommand,
-                                  info.CommandShell == 1 ? Encoding.Default : new UTF8Encoding(true));
-                string executable = info.CommandShell == 1
+                File.WriteAllText(scriptPath, command,
+                                  commandShell == 1 ? Encoding.Default : new UTF8Encoding(true));
+                string executable = commandShell == 1
                     ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe")
                     : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
                                    "WindowsPowerShell", "v1.0", "powershell.exe");
-                string arguments = info.CommandShell == 1
+                string arguments = commandShell == 1
                     ? "/D /S /C \"\"" + scriptPath + "\"\""
                     : "-NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath + "\"";
                 var start = new ProcessStartInfo {
@@ -195,9 +233,9 @@ namespace DKSelfExtractor
                 };
                 using (var process = Process.Start(start))
                 {
+                    // Allow the user to follow the visible console. A nonzero exit
+                    // code is not considered an extraction error.
                     process.WaitForExit();
-                    if (process.ExitCode != 0)
-                        throw new InvalidOperationException("작업 후 명령줄 실패 (종료 코드 " + process.ExitCode + ")");
                 }
             }
             finally
@@ -229,6 +267,10 @@ namespace DKSelfExtractor
             bool replace = overwrite.Checked;
             bool openFolder = openAfterExtract.Checked;
             bool runCommand = runAfterExtract.Enabled && runAfterExtract.Checked;
+            string editedCommand = commandEditor == null ? "" : commandEditor.Text;
+            byte commandShell = package.CommandShell;
+            if (commandToggle != null) commandToggle.Enabled = false;
+            if (commandEditor != null) commandEditor.Enabled = false;
             Task.Run(() =>
             {
                 string temporary = Package.UnpackPayload(Application.ExecutablePath, package, secret);
@@ -242,15 +284,17 @@ namespace DKSelfExtractor
                     });
                 }
                 finally { if (File.Exists(temporary)) File.Delete(temporary); }
-                if (runCommand)
+                if (runCommand && !String.IsNullOrWhiteSpace(editedCommand))
                 {
                     if (IsHandleCreated && !IsDisposed)
                         BeginInvoke(new Action(() => status.Text = "작업 후 명령줄 실행 중..."));
-                    RunPostCommand(package, path);
+                    RunPostCommand(commandShell, editedCommand, path);
                 }
             }).ContinueWith(task =>
             {
                 extract.Enabled = true;
+                if (commandToggle != null) commandToggle.Enabled = true;
+                if (commandEditor != null) commandEditor.Enabled = true;
                 progress.Visible = false;
                 if (task.IsFaulted)
                 {

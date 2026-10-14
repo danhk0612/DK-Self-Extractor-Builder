@@ -254,6 +254,13 @@ try {
                 $openAfter = $formType.GetField("openAfterExtract",$fieldFlags).GetValue($extractor)
                 $overwrite = $formType.GetField("overwrite",$fieldFlags).GetValue($extractor)
                 $runAfter = $formType.GetField("runAfterExtract",$fieldFlags).GetValue($extractor)
+                $noCommandToggle = $formType.GetField("commandToggle",$fieldFlags).GetValue($extractor)
+                $noCommandPanel = $formType.GetField("commandPanel",$fieldFlags).GetValue($extractor)
+                $noCommandEditor = $formType.GetField("commandEditor",$fieldFlags).GetValue($extractor)
+                if ($null -ne $noCommandToggle -or $null -ne $noCommandPanel -or
+                    $null -ne $noCommandEditor) {
+                    throw "Command-free SFX should not allocate a command editor"
+                }
                 if ($runAfter.Checked -or $runAfter.Enabled -or
                     $runAfter.Top -ne $openAfter.Top -or
                     $runAfter.Bounds.IntersectsWith($openAfter.Bounds) -or
@@ -305,15 +312,41 @@ try {
             $execute.Bounds.IntersectsWith($afterOpen.Bounds)) {
             throw "Present post-command should show checked and enabled option"
         }
+        $toggle = $formType.GetField("commandToggle",$fieldFlags).GetValue($enabledForm)
+        $editor = $formType.GetField("commandEditor",$fieldFlags).GetValue($enabledForm)
+        $panel = $formType.GetField("commandPanel",$fieldFlags).GetValue($enabledForm)
+        $originalHeight = $enabledForm.ClientSize.Height
+        if ($null -eq $toggle -or $null -eq $editor -or $null -eq $panel -or
+            $panel.Visible -or $editor.ReadOnly -or -not $editor.Multiline -or
+            $editor.Text -ne "echo executed") {
+            throw "Embedded post command is not available in a collapsed editable pane"
+        }
+        $setExpanded = $formType.GetMethod("SetCommandExpanded",(
+            [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic))
+        $setExpanded.Invoke($enabledForm,([object[]]@($true))) | Out-Null
+        if (-not $toggle.Text.StartsWith(([string][char]0x25BE)) -or
+            $enabledForm.ClientSize.Height -le $originalHeight -or
+            $panel.Bottom -gt $enabledForm.ClientSize.Height -or
+            $editor.Bounds.Bottom -gt $panel.ClientSize.Height) {
+            throw "Expanded post command panel overflow or not visible"
+        }
+        $changedCommand = "echo modified" + [Environment]::NewLine + "echo second"
+        $editor.Text = $changedCommand
+        if ($editor.Text -ne $changedCommand) { throw "Post command editor did not accept changes" }
+        $setExpanded.Invoke($enabledForm,([object[]]@($false))) | Out-Null
+        if (-not $toggle.Text.StartsWith(([string][char]0x25B8)) -or
+            $enabledForm.ClientSize.Height -ne $originalHeight -or
+            $editor.Text -ne $changedCommand) { throw "Collapsing lost command edits" }
         $execute.Checked = $false
         if ($execute.Checked) { throw "Post-command option cannot be turned off" }
     } finally { $enabledForm.Dispose() }
     $stubSource = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot "src\Stub\Program.cs"))
     if (-not $stubSource.Contains("runAfterExtract.Enabled && runAfterExtract.Checked") -or
-        -not $stubSource.Contains("if (runCommand)")) {
+        -not $stubSource.Contains("RunPostCommand(commandShell, editedCommand, path)") -or
+        -not $stubSource.Contains("commandEditor.Text")) {
         throw "Post-command checkbox is not wired to extraction execution"
     }
-    Write-Host "PASS conditional default-on post-command option and optional suppression"
+    Write-Host "PASS optional editable collapsible post-command pane and execution selection"
 
 
 
@@ -321,7 +354,7 @@ try {
 
     # Explicitly keep command process windows visible and allow PowerShell input.
     # This cannot visually inspect a desktop console in headless CI; functional
-    # CMD/PowerShell script tests below still verify execution and exit codes.
+    # CMD/PowerShell script tests below verify execution without exit-code validation.
     $stubSource = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot "src\Stub\Program.cs"))
     if (-not $stubSource.Contains("CreateNoWindow = false") -or
         -not $stubSource.Contains("WindowStyle = ProcessWindowStyle.Normal") -or
@@ -358,34 +391,32 @@ try {
         try {
             # The runner must have the extraction result available first.
             Invoke-Internal $extract @($scriptZip,$scriptDestination,$true,$null) | Out-Null
-            $scriptArgs = [object[]]::new(2)
-            $scriptArgs[0] = $scriptInfo
-            $scriptArgs[1] = $scriptDestination
-            Invoke-Internal $scriptRunner @($scriptInfo,$scriptDestination) | Out-Null
+            Invoke-Internal $scriptRunner @($test.Shell,$test.Command,$scriptDestination) | Out-Null
             if (-not (Test-Path (Join-Path $scriptDestination ($test.Expected + "-marker-1.txt"))) -or
                 -not (Test-Path (Join-Path $scriptDestination ($test.Expected + "-marker-2.txt")))) {
                 throw "Multi-line post-extract command did not run for $($test.Expected)"
             }
-            Invoke-Internal $scriptRunner @($plainInfo,$scriptDestination) | Out-Null
+            Invoke-Internal $scriptRunner @([byte]1,"",$scriptDestination) | Out-Null
         } finally { Remove-Item $scriptZip -Force -ErrorAction SilentlyContinue }
     }
     Write-Host "PASS CMD and PowerShell multiline post-extract commands and v2 signed metadata"
 
-    # Nonzero exit code must be reported, not treated as success.
-    $failedExe = Join-Path $out "failure-script.exe"
-    Invoke-Build ([string[]]@($src)) $failedExe $dst "" "" 2 "" ([byte]1) "exit /b 7"
-    $failedInfo = Invoke-Internal $read @($failedExe)
-    try {
-        Invoke-Internal $scriptRunner @($failedInfo,$dst) | Out-Null
-        throw "Post-extract failure exit code was ignored"
-    } catch {
-        $cause = $_.Exception
-        while ($null -ne $cause.InnerException -and -not ($cause.Message -match "7")) {
-            $cause = $cause.InnerException
-        }
-        if ($cause.Message -notmatch "7") { throw }
+    # An edited command (rather than the packaged original) is used at runtime.
+    $edited = "echo changed> edited-command.txt"
+    Invoke-Internal $scriptRunner @([byte]1,$edited,$dst) | Out-Null
+    if (-not (Test-Path (Join-Path $dst "edited-command.txt"))) {
+        throw "Runtime-supplied edited command did not execute"
     }
-    Write-Host "PASS nonzero CMD exit code detected"
+    Write-Host "PASS user-edited post-command text runs from destination"
+
+    # CMD and PowerShell must ignore nonzero exit codes and return normally.
+    foreach ($nonzero in @(
+        @{ Shell = [byte]1; Command = "exit /b 7"; Name = "CMD" },
+        @{ Shell = [byte]2; Command = "exit 7"; Name = "PowerShell" }
+    )) {
+        Invoke-Internal $scriptRunner @($nonzero.Shell,$nonzero.Command,$dst) | Out-Null
+        Write-Host ("PASS nonzero " + $nonzero.Name + " exit code ignored")
+    }
 
     # Verify the exact Windows Shell COM interface identity and that it can be
     # queried from the Windows FileOpenDialog coclass without opening a modal GUI.
