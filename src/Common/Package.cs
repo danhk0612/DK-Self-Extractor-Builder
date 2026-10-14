@@ -41,30 +41,61 @@ namespace DKSelfExtractor
                 throw new InvalidDataException("연결 또는 재분석 지점 폴더는 포함할 수 없습니다: " + directory);
         }
 
-        private static void AddFolder(ZipArchive archive, string root, string current, CompressionLevel level)
+        private static void AddFolder(ZipArchive archive, string root, string current,
+                                      string prefix, CompressionLevel level)
         {
             CheckDirectory(current);
             foreach (string directory in Directory.GetDirectories(current))
             {
                 CheckDirectory(directory);
                 string relative = directory.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar).Replace('\\', '/');
-                archive.CreateEntry(relative + "/");
-                AddFolder(archive, root, directory, level);
+                archive.CreateEntry(prefix + "/" + relative + "/");
+                AddFolder(archive, root, directory, prefix, level);
             }
             foreach (string file in Directory.GetFiles(current))
             {
                 if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
                     throw new InvalidDataException("연결 또는 재분석 지점 파일은 포함할 수 없습니다: " + file);
                 string relative = file.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar).Replace('\\', '/');
-                archive.CreateEntryFromFile(file, relative, level);
+                archive.CreateEntryFromFile(file, prefix + "/" + relative, level);
             }
         }
 
-        internal static void CreateZip(string sourceFolder, string path, CompressionLevel level)
+        internal static void CreateZip(string[] sourcePaths, string path, CompressionLevel level)
         {
+            if (sourcePaths == null || sourcePaths.Length == 0)
+                throw new ArgumentException("추가할 파일 또는 폴더가 없습니다.");
+
+            // Archive entries are rooted at each selected file/folder name.
+            // Distinct sources must not silently create duplicate names at that root.
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write))
             using (var archive = new ZipArchive(output, ZipArchiveMode.Create))
-                AddFolder(archive, Path.GetFullPath(sourceFolder).TrimEnd('\\'), Path.GetFullPath(sourceFolder).TrimEnd('\\'), level);
+            {
+                foreach (string source in sourcePaths)
+                {
+                    string full = Path.GetFullPath(source);
+                    string baseName = Path.GetFileName(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    if (String.IsNullOrEmpty(baseName) || baseName.Contains(":"))
+                        throw new ArgumentException("드라이브의 루트 폴더는 추가할 수 없습니다: " + source);
+                    if (!names.Add(baseName))
+                        throw new ArgumentException("동일한 이름의 최상위 파일/폴더를 함께 추가할 수 없습니다: " + baseName);
+
+                    if (Directory.Exists(full))
+                    {
+                        CheckDirectory(full);
+                        archive.CreateEntry(baseName + "/");
+                        AddFolder(archive, full.TrimEnd(Path.DirectorySeparatorChar), full, baseName, level);
+                    }
+                    else if (File.Exists(full))
+                    {
+                        if ((File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0)
+                            throw new InvalidDataException("연결 또는 재분석 지점 파일은 포함할 수 없습니다: " + full);
+                        archive.CreateEntryFromFile(full, baseName, level);
+                    }
+                    else throw new FileNotFoundException("추가한 파일 또는 폴더를 찾을 수 없습니다.", full);
+                }
+            }
         }
 
         private static byte[] Random(int size)
