@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Threading.Tasks;
@@ -26,7 +27,7 @@ namespace DKSelfExtractor
     {
         private readonly PackageInfo package;
         private readonly TextBox destination, password;
-        private readonly CheckBox overwrite;
+        private readonly CheckBox overwrite, openAfterExtract;
         private readonly Button extract;
         private readonly Label status;
         private readonly ProgressBar progress;
@@ -99,6 +100,12 @@ namespace DKSelfExtractor
                 ForeColor = Color.FromArgb(53, 46, 89)
             };
             Controls.Add(overwrite);
+            openAfterExtract = new CheckBox {
+                Text = "해제 후 열기", Checked = true,
+                AutoSize = true, Location = new Point(125, top + 2),
+                ForeColor = Color.FromArgb(53, 46, 89)
+            };
+            Controls.Add(openAfterExtract);
 
             int footer = top + 32;
             status = new Label {
@@ -173,6 +180,7 @@ namespace DKSelfExtractor
             progress.Visible = true;
             status.Text = "압축 데이터 확인 중...";
             bool replace = overwrite.Checked;
+            bool openFolder = openAfterExtract.Checked;
             Task.Run(() =>
             {
                 string temporary = Package.UnpackPayload(Application.ExecutablePath, package, secret);
@@ -202,6 +210,11 @@ namespace DKSelfExtractor
                     status.Text = "압축 해제 완료";
                     MessageBox.Show(this, "파일 압축 해제가 완료되었습니다.", "완료",
                                     MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    if (openFolder)
+                        Process.Start(new ProcessStartInfo {
+                            FileName = Path.GetFullPath(Environment.ExpandEnvironmentVariables(path)),
+                            UseShellExecute = true
+                        });
                 }
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
