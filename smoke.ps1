@@ -294,7 +294,9 @@ try {
     $infoType.GetField("Destination",$fieldFlags).SetValue($enabledInfo,$dst)
     $infoType.GetField("Note",$fieldFlags).SetValue($enabledInfo,"")
     $infoType.GetField("PostCommand",$fieldFlags).SetValue($enabledInfo,"echo executed")
-    $enabledForm = $formCtor.Invoke(([object[]]@($enabledInfo)))
+    $enabledInputs = [object[]]::new(1)
+    $enabledInputs[0] = $enabledInfo
+    $enabledForm = $formCtor.Invoke($enabledInputs)
     try {
         $execute = $formType.GetField("runAfterExtract",$fieldFlags).GetValue($enabledForm)
         $afterOpen = $formType.GetField("openAfterExtract",$fieldFlags).GetValue($enabledForm)
