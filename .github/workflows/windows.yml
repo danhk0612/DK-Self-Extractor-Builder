@@ -1,0 +1,27 @@
+name: Windows build and smoke test
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build compact Windows executables
+        shell: powershell
+        run: .\build.ps1
+      - name: Verify SFX roundtrips and extraction safety
+        shell: powershell
+        run: .\smoke.ps1
+      - name: Upload builder executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: DK-Self-Extractor-Builder-win
+          path: src/Builder/bin/Release/DK-Self-Extractor-Builder.exe
+          if-no-files-found: error
