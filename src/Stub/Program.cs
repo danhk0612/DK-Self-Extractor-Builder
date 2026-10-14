@@ -35,80 +35,87 @@ namespace DKSelfExtractor
         {
             package = info;
             Text = String.IsNullOrWhiteSpace(info.Name) ? "DK Self Extractor" : info.Name;
-            ClientSize = new Size(565, info.Encrypted ? 452 : 393);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Color.FromArgb(245, 247, 251);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            BackColor = Color.FromArgb(248, 250, 253);
             Font = new Font("Segoe UI", 10f);
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
-            var header = new Panel { Bounds = new Rectangle(0, 0, 565, 90), BackColor = Color.White };
-            Controls.Add(header);
-            header.Controls.Add(new Label {
-                Text = "파일 압축 해제", Font = new Font("Segoe UI Semibold", 19f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(29, 41, 64), Bounds = new Rectangle(26, 15, 510, 40)
-            });
-            header.Controls.Add(new Label {
-                Text = "원하는 폴더를 확인한 후 압축 해제를 시작하세요.",
-                ForeColor = Color.FromArgb(107, 119, 139), Bounds = new Rectangle(28, 58, 520, 24)
-            });
-
-            if (!String.IsNullOrEmpty(info.Note))
+            int top = 23;
+            if (!String.IsNullOrWhiteSpace(info.Note))
             {
-                var memo = new Label {
-                    Text = info.Note, ForeColor = Color.FromArgb(64, 79, 105),
-                    Bounds = new Rectangle(28, 101, 509, 43), AutoEllipsis = true
+                AddLabel("안내 문구", top);
+                var memo = new TextBox {
+                    Text = info.Note,
+                    Bounds = new Rectangle(25, top + 29, 512, 83),
+                    ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical,
+                    BorderStyle = BorderStyle.FixedSingle,
+                    BackColor = Color.White, ForeColor = Color.FromArgb(56, 72, 97),
+                    Font = new Font("Segoe UI", 9.5f),
+                    TabStop = false
                 };
                 Controls.Add(memo);
+                top += 128;
             }
 
-            int top = 153;
             AddLabel("압축 해제 위치", top);
             destination = new TextBox {
-                Bounds = new Rectangle(28, top + 28, 396, 28), BorderStyle = BorderStyle.FixedSingle,
-                Text = Environment.ExpandEnvironmentVariables(info.Destination), Font = new Font("Segoe UI", 10f)
+                Bounds = new Rectangle(25, top + 29, 392, 29),
+                BorderStyle = BorderStyle.FixedSingle,
+                Text = Environment.ExpandEnvironmentVariables(info.Destination),
+                Font = new Font("Segoe UI", 10f)
             };
             Controls.Add(destination);
-            AddButton("찾아보기", 432, top + 26, 106, 32, delegate {
-                using (var dialog = new FolderBrowserDialog { Description = "압축 해제 폴더 선택", SelectedPath = destination.Text })
-                    if (dialog.ShowDialog(this) == DialogResult.OK) destination.Text = dialog.SelectedPath;
+            AddButton("찾아보기", 425, top + 27, 112, 33, delegate {
+                using (var dialog = new FolderBrowserDialog {
+                    Description = "압축 해제 폴더 선택", SelectedPath = destination.Text
+                })
+                    if (dialog.ShowDialog(this) == DialogResult.OK)
+                        destination.Text = dialog.SelectedPath;
             }, false);
 
             overwrite = new CheckBox {
                 Text = "기존 파일 덮어쓰기", Checked = true, AutoSize = true,
-                Location = new Point(28, 224), ForeColor = Color.FromArgb(64, 79, 105)
+                Location = new Point(25, top + 74),
+                ForeColor = Color.FromArgb(56, 72, 97)
             };
             Controls.Add(overwrite);
 
+            int next = top + 110;
             if (info.Encrypted)
             {
-                AddLabel("암호", 262);
+                AddLabel("암호", next);
                 password = new TextBox {
-                    Bounds = new Rectangle(28, 292, 510, 29), BorderStyle = BorderStyle.FixedSingle,
+                    Bounds = new Rectangle(25, next + 27, 512, 29),
+                    BorderStyle = BorderStyle.FixedSingle,
                     UseSystemPasswordChar = true, Font = new Font("Segoe UI", 10f)
                 };
                 Controls.Add(password);
+                next += 70;
             }
 
-            int start = info.Encrypted ? 336 : 276;
-            extract = AddButton("압축 해제", 28, start, 510, 43, delegate { BeginExtract(); }, true);
+            extract = AddButton("압축 해제", 25, next, 512, 43, delegate {
+                BeginExtract();
+            }, true);
             progress = new ProgressBar {
-                Bounds = new Rectangle(28, start + 54, 510, 8), Minimum = 0, Maximum = 100,
-                Style = ProgressBarStyle.Continuous
+                Bounds = new Rectangle(25, next + 54, 512, 7),
+                Minimum = 0, Maximum = 100, Style = ProgressBarStyle.Continuous
             };
             Controls.Add(progress);
             status = new Label {
-                Text = "준비됨", Bounds = new Rectangle(28, start + 71, 510, 24),
-                ForeColor = Color.FromArgb(107, 119, 139), AutoEllipsis = true
+                Text = "준비됨", Bounds = new Rectangle(25, next + 70, 512, 24),
+                ForeColor = Color.FromArgb(103, 119, 140), AutoEllipsis = true
             };
             Controls.Add(status);
+            ClientSize = new Size(563, status.Bottom + 12);
         }
 
         private void AddLabel(string content, int y)
         {
             Controls.Add(new Label {
-                Text = content, Bounds = new Rectangle(28, y, 500, 25),
+                Text = content, Bounds = new Rectangle(25, y, 512, 25),
                 Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(64, 79, 105)
             });
@@ -119,12 +126,15 @@ namespace DKSelfExtractor
         {
             var button = new Button {
                 Text = text, Bounds = new Rectangle(x, y, width, height),
-                FlatStyle = FlatStyle.Flat, BackColor = primary ? Color.FromArgb(48, 99, 224) : Color.White,
-                ForeColor = primary ? Color.White : Color.FromArgb(48, 70, 107),
-                Font = primary ? new Font("Segoe UI Semibold", 11f, FontStyle.Bold) : Font,
-                Cursor = Cursors.Hand
+                FlatStyle = FlatStyle.Flat,
+                BackColor = primary ? Color.FromArgb(48, 99, 224) : Color.FromArgb(234, 240, 252),
+                ForeColor = primary ? Color.White : Color.FromArgb(39, 72, 130),
+                Font = new Font("Segoe UI Semibold", primary ? 11f : 9.5f, FontStyle.Bold),
+                Cursor = Cursors.Hand, UseVisualStyleBackColor = false
             };
-            button.FlatAppearance.BorderColor = Color.FromArgb(213, 220, 232);
+            button.FlatAppearance.BorderSize = 0;
+            button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(39, 84, 199) : Color.FromArgb(217, 229, 251);
+            button.FlatAppearance.MouseDownBackColor = primary ? Color.FromArgb(29, 70, 181) : Color.FromArgb(198, 216, 246);
             button.Click += handler;
             Controls.Add(button);
             return button;
