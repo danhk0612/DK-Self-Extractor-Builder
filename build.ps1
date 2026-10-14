@@ -14,8 +14,8 @@ $shape.AddArc(42,6,16,16,270,90)
 $shape.AddArc(42,42,16,16,0,90)
 $shape.AddArc(6,42,16,16,90,90)
 $shape.CloseFigure()
-$blue = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(48,99,224))
-$graphics.FillPath($blue,$shape)
+$purple = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(53,46,89))
+$graphics.FillPath($purple,$shape)
 $pen = [System.Drawing.Pen]::new([System.Drawing.Color]::White, 4)
 $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
 $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
@@ -25,7 +25,7 @@ $graphics.DrawLine($pen,23,36,32,45)
 $graphics.DrawLine($pen,41,36,32,45)
 $icon = [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
 $stream = [System.IO.File]::Create((Join-Path $PSScriptRoot "build\app.ico"))
-try { $icon.Save($stream) } finally { $stream.Dispose(); $icon.Dispose(); $pen.Dispose(); $blue.Dispose(); $shape.Dispose(); $graphics.Dispose(); $bitmap.Dispose() }
+try { $icon.Save($stream) } finally { $stream.Dispose(); $icon.Dispose(); $pen.Dispose(); $purple.Dispose(); $shape.Dispose(); $graphics.Dispose(); $bitmap.Dispose() }
 
 $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) "Microsoft Visual Studio\Installer\vswhere.exe"
 if (-not (Test-Path $vswhere)) { throw "Visual Studio Build Tools (MSBuild) not found." }
