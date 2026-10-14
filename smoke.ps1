@@ -44,10 +44,13 @@ try {
     $pathArgs = [object[]]::new(1)
     $pathArgs[0] = [string[]]@($src)
     $suggested = $defaultExe.Invoke($null,$pathArgs)
-    if ($suggested -ne (Join-Path $folder "input.exe")) { throw "Default EXE folder path mismatch: $suggested" }
+    $expectedPath = [string](Join-Path $folder "input.exe")
+    if (-not [string]::Equals([string]$suggested,$expectedPath,[System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Default EXE folder path mismatch actual=[$suggested] length=$(([string]$suggested).Length) expected=[$expectedPath] length=$($expectedPath.Length)"
+    }
     $pathArgs[0] = [string[]]@((Join-Path $src "sample.txt"))
     $suggestedFile = $defaultExe.Invoke($null,$pathArgs)
-    if ($suggestedFile -ne (Join-Path $folder "input.exe")) { throw "Default EXE file path mismatch: $suggestedFile" }
+    if (-not [string]::Equals([string]$suggestedFile,$expectedPath,[System.StringComparison]::OrdinalIgnoreCase)) { throw "Default EXE file path mismatch: $suggestedFile expected $expectedPath" }
     Write-Host "PASS default EXE path for first file/folder"
     foreach ($level in @(0,1,2)) {
         $bundle = Join-Path $out ("bundle-" + $level + ".exe")
