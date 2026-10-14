@@ -14,6 +14,18 @@ $stubExe = Join-Path $PSScriptRoot "src\Stub\bin\Release\DKSelfExtractor.Stub.ex
 $builder = [System.Reflection.Assembly]::LoadFrom($builderExe)
 $stub = [System.Reflection.Assembly]::LoadFrom($stubExe)
 $build = $builder.GetType("DKSelfExtractor.BuilderForm").GetMethod("Build",$flags)
+function Invoke-Build([string[]]$paths, [string]$exe, [string]$destination, [string]$memo, [string]$secret, [int]$level) {
+    $arguments = [object[]]::new(6)
+    $arguments[0] = $paths
+    $arguments[1] = $exe
+    $arguments[2] = $destination
+    $arguments[3] = $memo
+    $arguments[4] = $secret
+    $arguments[5] = $level
+    Invoke-Internal $build $arguments | Out-Null
+}
+$builderType = $builder.GetType("DKSelfExtractor.BuilderForm")
+$defaultExe = $builderType.GetMethod("DefaultExePath",$flags)
 $package = $stub.GetType("DKSelfExtractor.Package")
 $read = $package.GetMethod("Read",$flags)
 $unpack = $package.GetMethod("UnpackPayload",$flags)
@@ -22,15 +34,24 @@ $folder = Join-Path $env:TEMP ("dksfx-smoke-" + [Guid]::NewGuid().ToString("N"))
 $src = Join-Path $folder "input"
 $out = Join-Path $folder "output"
 $dst = Join-Path $folder "extracted"
+$restored = Join-Path $dst "input"
 $korean = ([string][char]0xD55C) + ([string][char]0xAE00)
 try {
     New-Item -ItemType Directory -Force $src,$out,(Join-Path $src "sub"),(Join-Path $src "empty") | Out-Null
     [System.IO.File]::WriteAllText((Join-Path $src "sample.txt"),"hello")
     [System.IO.File]::WriteAllText((Join-Path $src "sub\data.txt"),"nested")
     [System.IO.File]::WriteAllText((Join-Path $src ("sub\unicode-" + $korean + ".txt")),"unicode")
+    $pathArgs = [object[]]::new(1)
+    $pathArgs[0] = [string[]]@($src)
+    $suggested = $defaultExe.Invoke($null,$pathArgs)
+    if ($suggested -ne (Join-Path $folder "input.exe")) { throw "Default EXE folder path mismatch: $suggested" }
+    $pathArgs[0] = [string[]]@((Join-Path $src "sample.txt"))
+    $suggestedFile = $defaultExe.Invoke($null,$pathArgs)
+    if ($suggestedFile -ne (Join-Path $folder "input.exe")) { throw "Default EXE file path mismatch: $suggestedFile" }
+    Write-Host "PASS default EXE path for first file/folder"
     foreach ($level in @(0,1,2)) {
         $bundle = Join-Path $out ("bundle-" + $level + ".exe")
-        Invoke-Internal $build @($src,$bundle,$dst,"test memo","pass-123", $level) | Out-Null
+        Invoke-Build ([string[]]@($src)) $bundle $dst "test memo" "pass-123" $level
         if (-not (Test-Path $bundle)) { throw "Build missing level $level" }
         # The CLR cannot load the same assembly identity from multiple file paths in one AppDomain.
         if ($level -eq 0) {
@@ -49,24 +70,62 @@ try {
         $zip = Invoke-Internal $unpack @($bundle,$info,"pass-123")
         try {
             Invoke-Internal $extract @($zip,$dst,$true,$null) | Out-Null
-            if ([System.IO.File]::ReadAllText((Join-Path $dst "sample.txt")) -ne "hello") { throw "Content mismatch" }
-            if (-not (Test-Path (Join-Path $dst "empty"))) { throw "Empty directory lost" }
-            if ([System.IO.File]::ReadAllText((Join-Path $dst ("sub\unicode-" + $korean + ".txt"))) -ne "unicode") { throw "Unicode path failed" }
-            [System.IO.File]::WriteAllText((Join-Path $dst "sample.txt"),"changed")
+            if ([System.IO.File]::ReadAllText((Join-Path $restored "sample.txt")) -ne "hello") { throw "Content mismatch" }
+            if (-not (Test-Path (Join-Path $restored "empty"))) { throw "Empty directory lost" }
+            if ([System.IO.File]::ReadAllText((Join-Path $restored ("sub\unicode-" + $korean + ".txt"))) -ne "unicode") { throw "Unicode path failed" }
+            [System.IO.File]::WriteAllText((Join-Path $restored "sample.txt"),"changed")
             Invoke-Internal $extract @($zip,$dst,$false,$null) | Out-Null
-            if ([System.IO.File]::ReadAllText((Join-Path $dst "sample.txt")) -ne "changed") { throw "Non-overwrite failed" }
+            if ([System.IO.File]::ReadAllText((Join-Path $restored "sample.txt")) -ne "changed") { throw "Non-overwrite failed" }
             Invoke-Internal $extract @($zip,$dst,$true,$null) | Out-Null
-            if ([System.IO.File]::ReadAllText((Join-Path $dst "sample.txt")) -ne "hello") { throw "Overwrite failed" }
+            if ([System.IO.File]::ReadAllText((Join-Path $restored "sample.txt")) -ne "hello") { throw "Overwrite failed" }
         } finally { Remove-Item $zip -Force -ErrorAction SilentlyContinue }
         Write-Host "PASS compression level $level encrypted roundtrip and overwrite toggle"
     }
     $plain = Join-Path $out "plain.exe"
-    Invoke-Internal $build @($src,$plain,$dst,"","",2) | Out-Null
+    Invoke-Build ([string[]]@($src)) $plain $dst "" "" 2
     $plainInfo = Invoke-Internal $read @($plain)
     $plainZip = Invoke-Internal $unpack @($plain,$plainInfo,"")
     try { Invoke-Internal $extract @($plainZip,$dst,$true,$null) | Out-Null }
     finally { Remove-Item $plainZip -Force -ErrorAction SilentlyContinue }
     Write-Host "PASS unencrypted roundtrip"
+
+    # A file and a second folder are both roots in one archive.
+    $looseFile = Join-Path $folder "loose.txt"
+    $otherFolder = Join-Path $folder "extras"
+    New-Item -ItemType Directory -Force $otherFolder | Out-Null
+    [System.IO.File]::WriteAllText($looseFile,"loose")
+    [System.IO.File]::WriteAllText((Join-Path $otherFolder "extra.txt"),"other")
+    $mixed = Join-Path $out "mixed.exe"
+    Invoke-Build ([string[]]@($src,$looseFile,$otherFolder)) $mixed $dst "multi" "" 2
+    $mixedInfo = Invoke-Internal $read @($mixed)
+    $mixedZip = Invoke-Internal $unpack @($mixed,$mixedInfo,"")
+    try {
+        $mixedDst = Join-Path $folder "mixed-restored"
+        Invoke-Internal $extract @($mixedZip,$mixedDst,$true,$null) | Out-Null
+        if ([System.IO.File]::ReadAllText((Join-Path $mixedDst "loose.txt")) -ne "loose") { throw "Top-level file lost" }
+        if ([System.IO.File]::ReadAllText((Join-Path $mixedDst "extras\extra.txt")) -ne "other") { throw "Second folder lost" }
+        if ([System.IO.File]::ReadAllText((Join-Path $mixedDst "input\sub\data.txt")) -ne "nested") { throw "First folder tree lost" }
+    } finally { Remove-Item $mixedZip -Force -ErrorAction SilentlyContinue }
+    Write-Host "PASS mixed files/folders preserving directory roots"
+
+    # UI defaults: first added source fills output; advanced remains collapsed,
+    # and the memo is a multiline field.
+    $ui = [Activator]::CreateInstance($builderType, $true)
+    try {
+        $instanceFlags = [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic
+        $addSources = $builderType.GetMethod("AddSources",$instanceFlags)
+        $addArguments = [object[]]::new(1)
+        $addArguments[0] = [string[]]@($src,$looseFile)
+        $addSources.Invoke($ui,$addArguments) | Out-Null
+        $uiOutput = $builderType.GetField("output",$instanceFlags).GetValue($ui)
+        $uiMemo = $builderType.GetField("note",$instanceFlags).GetValue($ui)
+        $uiPanel = $builderType.GetField("advancedPanel",$instanceFlags).GetValue($ui)
+        if ($uiOutput.Text -ne (Join-Path $folder "input.exe")) { throw "First source did not auto-fill EXE path" }
+        if (-not $uiMemo.Multiline) { throw "Memo does not allow multiple lines" }
+        if ($uiPanel.Visible) { throw "Advanced options not collapsed" }
+    } finally { $ui.Dispose() }
+    Write-Host "PASS default output UI and collapsed multiline advanced options"
+
     $tampered = Join-Path $out "tampered.exe"
     [System.IO.File]::Copy((Join-Path $out "bundle-2.exe"), $tampered)
     $tamperInfo = Invoke-Internal $read @($tampered)
