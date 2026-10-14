@@ -28,7 +28,7 @@ namespace DKSelfExtractor
     {
         private readonly PackageInfo package;
         private readonly TextBox destination, password;
-        private readonly CheckBox overwrite, openAfterExtract;
+        private readonly CheckBox overwrite, openAfterExtract, runAfterExtract;
         private readonly Button extract;
         private readonly Label status;
         private readonly ProgressBar progress;
@@ -107,6 +107,14 @@ namespace DKSelfExtractor
                 ForeColor = Color.FromArgb(53, 46, 89)
             };
             Controls.Add(openAfterExtract);
+            bool hasPostCommand = !String.IsNullOrWhiteSpace(info.PostCommand);
+            runAfterExtract = new CheckBox {
+                Text = "작업 후 실행", Checked = hasPostCommand,
+                Enabled = hasPostCommand,
+                AutoSize = true, Location = new Point(255, top + 2),
+                ForeColor = Color.FromArgb(53, 46, 89)
+            };
+            Controls.Add(runAfterExtract);
 
             int footer = top + 32;
             status = new Label {
@@ -220,6 +228,7 @@ namespace DKSelfExtractor
             status.Text = "압축 데이터 확인 중...";
             bool replace = overwrite.Checked;
             bool openFolder = openAfterExtract.Checked;
+            bool runCommand = runAfterExtract.Enabled && runAfterExtract.Checked;
             Task.Run(() =>
             {
                 string temporary = Package.UnpackPayload(Application.ExecutablePath, package, secret);
@@ -233,7 +242,7 @@ namespace DKSelfExtractor
                     });
                 }
                 finally { if (File.Exists(temporary)) File.Delete(temporary); }
-                if (!String.IsNullOrWhiteSpace(package.PostCommand))
+                if (runCommand)
                 {
                     if (IsHandleCreated && !IsDisposed)
                         BeginInvoke(new Action(() => status.Text = "작업 후 명령줄 실행 중..."));
