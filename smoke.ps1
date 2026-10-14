@@ -83,7 +83,7 @@ try {
             Invoke-Internal $extract @($zip,$dst,$true,$null) | Out-Null
             if ([System.IO.File]::ReadAllText((Join-Path $restored "sample.txt")) -ne "hello") { throw "Overwrite failed" }
         } finally { Remove-Item $zip -Force -ErrorAction SilentlyContinue }
-        Write-Host "PASS compression level $level: single folder contents without extra root, encryption and overwrite"
+        Write-Host "PASS compression level ${level}: single folder contents without extra root, encryption and overwrite"
     }
     $plain = Join-Path $out "plain.exe"
     Invoke-Build ([string[]]@($src)) $plain $dst "" "" 2
