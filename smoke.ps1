@@ -32,8 +32,11 @@ try {
         $bundle = Join-Path $out ("bundle-" + $level + ".exe")
         Invoke-Internal $build @($src,$bundle,$dst,"test memo","pass-123", $level) | Out-Null
         if (-not (Test-Path $bundle)) { throw "Build missing level $level" }
-        $managed = [System.Reflection.Assembly]::ReflectionOnlyLoadFrom($bundle)
-        if ($managed.GetName().Name -ne "DKSelfExtractor.Stub") { throw "Generated EXE cannot be loaded as the SFX stub" }
+        # The CLR cannot load the same assembly identity from multiple file paths in one AppDomain.
+        if ($level -eq 0) {
+            $managed = [System.Reflection.Assembly]::ReflectionOnlyLoadFrom($bundle)
+            if ($managed.GetName().Name -ne "DKSelfExtractor.Stub") { throw "Generated EXE cannot be loaded as the SFX stub" }
+        }
         $info = (Invoke-Internal $read @($bundle))
         try {
             Invoke-Internal $unpack @($bundle,$info,"wrong-password") | Out-Null
