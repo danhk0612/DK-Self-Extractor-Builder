@@ -32,6 +32,8 @@ try {
         $bundle = Join-Path $out ("bundle-" + $level + ".exe")
         Invoke-Internal $build @($src,$bundle,$dst,"test memo","pass-123", $level) | Out-Null
         if (-not (Test-Path $bundle)) { throw "Build missing level $level" }
+        $managed = [System.Reflection.Assembly]::ReflectionOnlyLoadFrom($bundle)
+        if ($managed.GetName().Name -ne "DKSelfExtractor.Stub") { throw "Generated EXE cannot be loaded as the SFX stub" }
         $info = (Invoke-Internal $read @($bundle))
         try {
             Invoke-Internal $unpack @($bundle,$info,"wrong-password") | Out-Null
@@ -62,6 +64,27 @@ try {
     try { Invoke-Internal $extract @($plainZip,$dst,$true,$null) | Out-Null }
     finally { Remove-Item $plainZip -Force -ErrorAction SilentlyContinue }
     Write-Host "PASS unencrypted roundtrip"
+    $tampered = Join-Path $out "tampered.exe"
+    [System.IO.File]::Copy((Join-Path $out "bundle-2.exe"), $tampered)
+    $tamperInfo = Invoke-Internal $read @($tampered)
+    $offsetField = $tamperInfo.GetType().GetField("Offset",([System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Public))
+    $offset = [long]$offsetField.GetValue($tamperInfo)
+    $stream = [System.IO.File]::Open($tampered,[System.IO.FileMode]::Open,[System.IO.FileAccess]::ReadWrite)
+    try {
+        $stream.Position = $offset
+        $first = $stream.ReadByte()
+        $stream.Position = $offset
+        $stream.WriteByte([byte]($first -bxor 1))
+    } finally { $stream.Dispose() }
+    try {
+        Invoke-Internal $unpack @($tampered,$tamperInfo,"pass-123") | Out-Null
+        throw "Tampered encrypted payload succeeded"
+    } catch {
+        $cause = $_.Exception
+        while ($null -ne $cause.InnerException -and -not ($cause -is [System.IO.InvalidDataException])) { $cause = $cause.InnerException }
+        if (-not ($cause -is [System.IO.InvalidDataException])) { throw }
+    }
+    Write-Host "PASS ciphertext tampering rejected"
     $evil = Join-Path $folder "evil.zip"
     Add-Type -AssemblyName System.IO.Compression
     $file = [System.IO.File]::Create($evil)
@@ -81,5 +104,7 @@ try {
         if (-not ($cause -is [System.IO.InvalidDataException])) { throw }
     }
     Write-Host "PASS traversal rejected"
+    Write-Host ("Builder EXE bytes: " + (Get-Item $builderExe).Length)
+    Write-Host ("Stub EXE bytes: " + (Get-Item $stubExe).Length)
 }
 finally { Remove-Item $folder -Recurse -Force -ErrorAction SilentlyContinue }
