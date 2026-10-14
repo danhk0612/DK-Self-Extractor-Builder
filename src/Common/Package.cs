@@ -49,7 +49,7 @@ namespace DKSelfExtractor
             {
                 CheckDirectory(directory);
                 string relative = directory.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar).Replace('\\', '/');
-                archive.CreateEntry(prefix + "/" + relative + "/");
+                archive.CreateEntry((prefix.Length == 0 ? relative : prefix + "/" + relative) + "/");
                 AddFolder(archive, root, directory, prefix, level);
             }
             foreach (string file in Directory.GetFiles(current))
@@ -57,7 +57,7 @@ namespace DKSelfExtractor
                 if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
                     throw new InvalidDataException("연결 또는 재분석 지점 파일은 포함할 수 없습니다: " + file);
                 string relative = file.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar).Replace('\\', '/');
-                archive.CreateEntryFromFile(file, prefix + "/" + relative, level);
+                archive.CreateEntryFromFile(file, prefix.Length == 0 ? relative : prefix + "/" + relative, level);
             }
         }
 
@@ -66,8 +66,9 @@ namespace DKSelfExtractor
             if (sourcePaths == null || sourcePaths.Length == 0)
                 throw new ArgumentException("추가할 파일 또는 폴더가 없습니다.");
 
-            // Archive entries are rooted at each selected file/folder name.
-            // Distinct sources must not silently create duplicate names at that root.
+            // A single selected folder contributes only its contents.
+            // Multiple sources retain their top-level names without silent collisions.
+            bool singleFolder = sourcePaths.Length == 1 && Directory.Exists(Path.GetFullPath(sourcePaths[0]));
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write))
             using (var archive = new ZipArchive(output, ZipArchiveMode.Create))
@@ -84,8 +85,9 @@ namespace DKSelfExtractor
                     if (Directory.Exists(full))
                     {
                         CheckDirectory(full);
-                        archive.CreateEntry(baseName + "/");
-                        AddFolder(archive, full.TrimEnd(Path.DirectorySeparatorChar), full, baseName, level);
+                        if (!singleFolder) archive.CreateEntry(baseName + "/");
+                        AddFolder(archive, full.TrimEnd(Path.DirectorySeparatorChar), full,
+                                  singleFolder ? "" : baseName, level);
                     }
                     else if (File.Exists(full))
                     {

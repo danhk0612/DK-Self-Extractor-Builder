@@ -17,7 +17,7 @@ namespace DKSelfExtractor
                 uint options;
                 dialog.GetOptions(out options);
                 dialog.SetOptions(options | 0x20u | 0x40u | 0x200u);
-                dialog.SetTitle("폴더 추가 (Ctrl/Shift로 여러 폴더 선택)");
+                dialog.SetTitle("폴더 선택");
                 int hr = dialog.Show(owner);
                 if (hr == unchecked((int)0x800704C7)) return new string[0];
                 if (hr < 0) Marshal.ThrowExceptionForHR(hr);

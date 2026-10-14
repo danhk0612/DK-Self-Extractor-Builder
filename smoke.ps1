@@ -34,7 +34,7 @@ $folder = Join-Path $env:TEMP ("dksfx-smoke-" + [Guid]::NewGuid().ToString("N"))
 $src = Join-Path $folder "input"
 $out = Join-Path $folder "output"
 $dst = Join-Path $folder "extracted"
-$restored = Join-Path $dst "input"
+$restored = $dst
 $korean = ([string][char]0xD55C) + ([string][char]0xAE00)
 try {
     New-Item -ItemType Directory -Force $src,$out,(Join-Path $src "sub"),(Join-Path $src "empty") | Out-Null
@@ -76,13 +76,14 @@ try {
             if ([System.IO.File]::ReadAllText((Join-Path $restored "sample.txt")) -ne "hello") { throw "Content mismatch" }
             if (-not (Test-Path (Join-Path $restored "empty"))) { throw "Empty directory lost" }
             if ([System.IO.File]::ReadAllText((Join-Path $restored ("sub\unicode-" + $korean + ".txt"))) -ne "unicode") { throw "Unicode path failed" }
+            if (Test-Path (Join-Path $dst "input")) { throw "Single folder created an unwanted extra root folder" }
             [System.IO.File]::WriteAllText((Join-Path $restored "sample.txt"),"changed")
             Invoke-Internal $extract @($zip,$dst,$false,$null) | Out-Null
             if ([System.IO.File]::ReadAllText((Join-Path $restored "sample.txt")) -ne "changed") { throw "Non-overwrite failed" }
             Invoke-Internal $extract @($zip,$dst,$true,$null) | Out-Null
             if ([System.IO.File]::ReadAllText((Join-Path $restored "sample.txt")) -ne "hello") { throw "Overwrite failed" }
         } finally { Remove-Item $zip -Force -ErrorAction SilentlyContinue }
-        Write-Host "PASS compression level $level encrypted roundtrip and overwrite toggle"
+        Write-Host "PASS compression level ${level}: single folder contents without extra root, encryption and overwrite"
     }
     $plain = Join-Path $out "plain.exe"
     Invoke-Build ([string[]]@($src)) $plain $dst "" "" 2
@@ -111,6 +112,33 @@ try {
     } finally { Remove-Item $mixedZip -Force -ErrorAction SilentlyContinue }
     Write-Host "PASS mixed files/folders preserving directory roots"
 
+    $two = Join-Path $out "two-folders.exe"
+    Invoke-Build ([string[]]@($src,$otherFolder)) $two $dst "" "" 2
+    $twoInfo = Invoke-Internal $read @($two)
+    $twoZip = Invoke-Internal $unpack @($two,$twoInfo,"")
+    try {
+        $twoDst = Join-Path $folder "two-restored"
+        Invoke-Internal $extract @($twoZip,$twoDst,$true,$null) | Out-Null
+        if (-not (Test-Path (Join-Path $twoDst "input\sub\data.txt")) -or
+            -not (Test-Path (Join-Path $twoDst "extras\extra.txt"))) {
+            throw "Multi-folder root preservation failed"
+        }
+    } finally { Remove-Item $twoZip -Force -ErrorAction SilentlyContinue }
+    Write-Host "PASS two selected folders keep their individual root names"
+
+    $singleFile = Join-Path $out "single-file.exe"
+    Invoke-Build ([string[]]@($looseFile)) $singleFile $dst "" "" 2
+    $singleInfo = Invoke-Internal $read @($singleFile)
+    $singleZip = Invoke-Internal $unpack @($singleFile,$singleInfo,"")
+    try {
+        $fileDst = Join-Path $folder "file-restored"
+        Invoke-Internal $extract @($singleZip,$fileDst,$true,$null) | Out-Null
+        if ([System.IO.File]::ReadAllText((Join-Path $fileDst "loose.txt")) -ne "loose") {
+            throw "Single file root behavior changed"
+        }
+    } finally { Remove-Item $singleZip -Force -ErrorAction SilentlyContinue }
+    Write-Host "PASS single selected file continues extracting at destination root"
+
     # UI defaults: first added source fills output; advanced remains collapsed,
     # and the memo is a multiline field.
     $ui = [Activator]::CreateInstance($builderType, $true)
@@ -125,6 +153,22 @@ try {
         $uiPanel = $builderType.GetField("advancedPanel",$instanceFlags).GetValue($ui)
         if (-not [string]::Equals([string]$uiOutput.Text,$expectedPath,[System.StringComparison]::OrdinalIgnoreCase)) { throw "First source did not auto-fill EXE path: $($uiOutput.Text)" }
         if (-not $uiMemo.Multiline) { throw "Memo does not allow multiple lines" }
+        $theme = [System.Drawing.Color]::FromArgb(53,46,89)
+        $uiCreate = $builderType.GetField("create",$instanceFlags).GetValue($ui)
+        if ($uiCreate.BackColor.ToArgb() -ne $theme.ToArgb()) {
+            throw "Builder primary button does not use #352E59"
+        }
+        $pathWord = [string]::Concat([char]0xACBD, [char]0xB85C)
+        $expectedLabels = @(
+            [string]::Concat([char]0xD56D, [char]0xBAA9),
+            ("EXE " + $pathWord),
+            ([string]::Concat([char]0xD574, [char]0xC81C) + " " + $pathWord)
+        )
+        foreach ($label in $expectedLabels) {
+            if (-not @($ui.Controls | Where-Object { $_ -is [System.Windows.Forms.Label] -and $_.Text -eq $label }).Count) {
+                throw "Builder short label is missing: $label"
+            }
+        }
         if ($uiPanel.Visible) { throw "Advanced options not collapsed" }
     } finally { $ui.Dispose() }
     Write-Host "PASS default output UI and collapsed multiline advanced options"
