@@ -36,8 +36,10 @@ try {
         try {
             Invoke-Internal $unpack @($bundle,$info,"wrong-password") | Out-Null
             throw "Wrong password succeeded"
-        } catch [System.Reflection.TargetInvocationException] {
-            if (-not ($_.Exception.InnerException -is [System.IO.InvalidDataException])) { throw }
+        } catch {
+            $cause = $_.Exception
+            if ($cause -is [System.Reflection.TargetInvocationException]) { $cause = $cause.InnerException }
+            if (-not ($cause -is [System.IO.InvalidDataException])) { throw }
         }
         $zip = Invoke-Internal $unpack @($bundle,$info,"pass-123")
         try {
@@ -73,8 +75,10 @@ try {
     try {
         Invoke-Internal $extract @($evil,$dst,$true,$null) | Out-Null
         throw "Traversal succeeded"
-    } catch [System.Reflection.TargetInvocationException] {
-        if (-not ($_.Exception.InnerException -is [System.IO.InvalidDataException])) { throw }
+    } catch {
+        $cause = $_.Exception
+        if ($cause -is [System.Reflection.TargetInvocationException]) { $cause = $cause.InnerException }
+        if (-not ($cause -is [System.IO.InvalidDataException])) { throw }
     }
     Write-Host "PASS traversal rejected"
 }
