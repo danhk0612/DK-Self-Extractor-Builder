@@ -29,5 +29,5 @@ jobs:
             Write-Host "v0.1.6 already published; leaving existing release unchanged."
             exit 0
           }
-          gh release create v0.1.6 "./src/Builder/bin/Release/DK-Self-Extractor-Builder.exe" --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "v0.1.6" --notes "Show a visible interactive CMD or PowerShell console while post-extraction commands execute; wait for completion and preserve exit-code handling. No changes to SFX package format or other functionality."
+          gh release create v0.1.6 "./src/Builder/bin/Release/DK-Self-Extractor-Builder.exe" --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "v0.1.6" --notes "Show a visible interactive CMD or PowerShell console while post-extraction commands execute. New default-checked Post-run option sits beside Open folder; users can uncheck to skip commands, and the option is disabled if no command is embedded. Preserve exit-code handling and SFX format."
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed." }
