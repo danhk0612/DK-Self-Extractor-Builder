@@ -158,7 +158,12 @@ try {
         if ($uiCreate.BackColor.ToArgb() -ne $theme.ToArgb()) {
             throw "Builder primary button does not use #352E59"
         }
-        $expectedLabels = @("항목","EXE 경로","해제 경로")
+        $pathWord = [string]::Concat([char]0xACBD, [char]0xB85C)
+        $expectedLabels = @(
+            [string]::Concat([char]0xD56D, [char]0xBAA9),
+            ("EXE " + $pathWord),
+            ([string]::Concat([char]0xD574, [char]0xC81C) + " " + $pathWord)
+        )
         foreach ($label in $expectedLabels) {
             if (-not @($ui.Controls | Where-Object { $_ -is [System.Windows.Forms.Label] -and $_.Text -eq $label }).Count) {
                 throw "Builder short label is missing: $label"
