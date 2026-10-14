@@ -4,19 +4,19 @@ Set-Location $PSScriptRoot
 # Build an original small icon with Windows GDI+; no downloaded artwork.
 Add-Type -AssemblyName System.Drawing
 New-Item -ItemType Directory -Force -Path "build" | Out-Null
-$bitmap = New-Object System.Drawing.Bitmap 64,64
+$bitmap = [System.Drawing.Bitmap]::new(64,64)
 $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
 $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
 $graphics.Clear([System.Drawing.Color]::Transparent)
-$shape = New-Object System.Drawing.Drawing2D.GraphicsPath
+$shape = [System.Drawing.Drawing2D.GraphicsPath]::new()
 $shape.AddArc(6,6,16,16,180,90)
 $shape.AddArc(42,6,16,16,270,90)
 $shape.AddArc(42,42,16,16,0,90)
 $shape.AddArc(6,42,16,16,90,90)
 $shape.CloseFigure()
-$blue = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(48,99,224))
+$blue = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(48,99,224))
 $graphics.FillPath($blue,$shape)
-$pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::White), 4
+$pen = [System.Drawing.Pen]::new([System.Drawing.Color]::White, 4)
 $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
 $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
 $graphics.DrawLine($pen,20,24,44,24)
