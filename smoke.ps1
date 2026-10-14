@@ -284,6 +284,18 @@ try {
 
 
 
+    # Explicitly keep command process windows visible and allow PowerShell input.
+    # This cannot visually inspect a desktop console in headless CI; functional
+    # CMD/PowerShell script tests below still verify execution and exit codes.
+    $stubSource = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot "src\Stub\Program.cs"))
+    if (-not $stubSource.Contains("CreateNoWindow = false") -or
+        -not $stubSource.Contains("WindowStyle = ProcessWindowStyle.Normal") -or
+        $stubSource.Contains("-NonInteractive") -or
+        -not $stubSource.Contains("process.WaitForExit()")) {
+        throw "Post-command console is hidden, noninteractive, or not awaited"
+    }
+    Write-Host "PASS visible CMD/PowerShell console configuration and wait-for-exit"
+
     # End-to-end post-extract command verification on Windows CMD and PowerShell.
     # Scripts run from the extraction directory and may span multiple lines.
     $scriptRunner = $formType.GetMethod("RunPostCommand",(
