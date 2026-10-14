@@ -23,7 +23,7 @@ namespace DKSelfExtractor
     internal sealed class BuilderForm : Form
     {
         private readonly ListView sources;
-        private readonly TextBox output, destination, note, password;
+        private readonly TextBox output, destination, note, password, title;
         private readonly ComboBox compression;
         private readonly Button create;
         private readonly Label status;
@@ -110,14 +110,17 @@ namespace DKSelfExtractor
             advancedToggle.BackColor = Color.FromArgb(241, 239, 246);
 
             advancedPanel = new Panel {
-                Bounds = new Rectangle(14, 319, 532, 143),
+                Bounds = new Rectangle(14, 319, 532, 187),
                 BackColor = BackColor, Visible = false
             };
             Controls.Add(advancedPanel);
 
-            AddLabel("압축률", 0, 0, 190, advancedPanel);
+            AddLabel("제목", 0, 0, 532, advancedPanel);
+            title = AddInput(19, 532, 0, advancedPanel);
+
+            AddLabel("압축률", 49, 0, 190, advancedPanel);
             compression = new ComboBox {
-                Location = new Point(0, 21), Size = new Size(194, 27),
+                Location = new Point(0, 69), Size = new Size(194, 27),
                 DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 9f)
             };
@@ -125,15 +128,15 @@ namespace DKSelfExtractor
             compression.SelectedIndex = 2;
             advancedPanel.Controls.Add(compression);
 
-            AddLabel("암호", 0, 207, 325, advancedPanel);
-            password = AddInput(21, 325, 207, advancedPanel);
+            AddLabel("암호", 49, 207, 325, advancedPanel);
+            password = AddInput(69, 325, 207, advancedPanel);
             password.UseSystemPasswordChar = true;
 
-            AddLabel("메모", 59, 0, 200, advancedPanel);
-            note = AddInput(79, 532, 0, advancedPanel);
+            AddLabel("메모", 107, 0, 200, advancedPanel);
+            note = AddInput(127, 532, 0, advancedPanel);
             note.Multiline = true;
             note.ScrollBars = ScrollBars.Vertical;
-            note.Height = 63;
+            note.Height = 58;
             note.AcceptsReturn = true;
 
             create = AddButton("생성", 425, 327, 121, delegate { BeginBuild(); });
@@ -158,7 +161,7 @@ namespace DKSelfExtractor
         {
             advancedPanel.Visible = expanded;
             advancedToggle.Text = expanded ? "▾ 고급" : "▸ 고급";
-            create.Top = expanded ? 473 : 327;
+            create.Top = expanded ? 516 : 327;
             status.Top = create.Top + 5;
             ClientSize = new Size(560, create.Bottom + 13);
         }
@@ -291,6 +294,7 @@ namespace DKSelfExtractor
             string exe = output.Text.Trim();
             string comment = note.Text;
             string secret = password.Text;
+            string caption = title.Text.Trim();
             int level = compression.SelectedIndex;
             if (items.Length == 0 || String.IsNullOrWhiteSpace(target))
             {
@@ -323,7 +327,7 @@ namespace DKSelfExtractor
 
             create.Enabled = false;
             status.Text = "압축 및 EXE 생성 중...";
-            Task.Run(() => Build(items, exe, target, comment, secret, level))
+            Task.Run(() => Build(items, exe, target, comment, secret, level, caption))
                 .ContinueWith(task =>
                 {
                     create.Enabled = true;
@@ -343,7 +347,7 @@ namespace DKSelfExtractor
         }
 
         private static void Build(string[] sourcePaths, string targetExe, string extractPath,
-                                  string memo, string password, int level)
+                                  string memo, string password, int level, string caption)
         {
             string zip = Package.TempPath();
             string stub = Package.TempPath();
@@ -359,7 +363,9 @@ namespace DKSelfExtractor
                     using (var outputStream = new FileStream(stub, FileMode.CreateNew, FileAccess.Write))
                         Package.Copy(embedded, outputStream);
                 }
-                Package.WriteExe(stub, zip, assembled, Path.GetFileNameWithoutExtension(targetExe), extractPath, memo, password);
+                Package.WriteExe(stub, zip, assembled,
+                    String.IsNullOrWhiteSpace(caption) ? Path.GetFileNameWithoutExtension(targetExe) : caption,
+                    extractPath, memo, password);
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(targetExe)));
                 File.Copy(assembled, targetExe, true);
             }
