@@ -314,12 +314,12 @@ try {
             $scriptArgs = [object[]]::new(2)
             $scriptArgs[0] = $scriptInfo
             $scriptArgs[1] = $scriptDestination
-            $scriptRunner.Invoke($null,$scriptArgs) | Out-Null
+            Invoke-Internal $scriptRunner @($scriptInfo,$scriptDestination) | Out-Null
             if (-not (Test-Path (Join-Path $scriptDestination ($test.Expected + "-marker-1.txt"))) -or
                 -not (Test-Path (Join-Path $scriptDestination ($test.Expected + "-marker-2.txt")))) {
                 throw "Multi-line post-extract command did not run for $($test.Expected)"
             }
-            $scriptRunner.Invoke($null,([object[]]@($plainInfo,$scriptDestination))) | Out-Null
+            Invoke-Internal $scriptRunner @($plainInfo,$scriptDestination) | Out-Null
         } finally { Remove-Item $scriptZip -Force -ErrorAction SilentlyContinue }
     }
     Write-Host "PASS CMD and PowerShell multiline post-extract commands and v2 signed metadata"
@@ -329,7 +329,7 @@ try {
     Invoke-Build ([string[]]@($src)) $failedExe $dst "" "" 2 "" ([byte]1) "exit /b 7"
     $failedInfo = Invoke-Internal $read @($failedExe)
     try {
-        $scriptRunner.Invoke($null,([object[]]@($failedInfo,$dst))) | Out-Null
+        Invoke-Internal $scriptRunner @($failedInfo,$dst) | Out-Null
         throw "Post-extract failure exit code was ignored"
     } catch {
         $cause = $_.Exception
