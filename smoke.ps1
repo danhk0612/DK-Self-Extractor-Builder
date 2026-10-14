@@ -324,7 +324,8 @@ try {
         $setExpanded = $formType.GetMethod("SetCommandExpanded",(
             [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic))
         $setExpanded.Invoke($enabledForm,([object[]]@($true))) | Out-Null
-        if (-not $panel.Visible -or $enabledForm.ClientSize.Height -le $originalHeight -or
+        if (-not $toggle.Text.StartsWith(([string][char]0x25BE)) -or
+            $enabledForm.ClientSize.Height -le $originalHeight -or
             $panel.Bottom -gt $enabledForm.ClientSize.Height -or
             $editor.Bounds.Bottom -gt $panel.ClientSize.Height) {
             throw "Expanded post command panel overflow or not visible"
@@ -333,7 +334,8 @@ try {
         $editor.Text = $changedCommand
         if ($editor.Text -ne $changedCommand) { throw "Post command editor did not accept changes" }
         $setExpanded.Invoke($enabledForm,([object[]]@($false))) | Out-Null
-        if ($panel.Visible -or $enabledForm.ClientSize.Height -ne $originalHeight -or
+        if (-not $toggle.Text.StartsWith(([string][char]0x25B8)) -or
+            $enabledForm.ClientSize.Height -ne $originalHeight -or
             $editor.Text -ne $changedCommand) { throw "Collapsing lost command edits" }
         $execute.Checked = $false
         if ($execute.Checked) { throw "Post-command option cannot be turned off" }
