@@ -38,7 +38,7 @@ try {
             throw "Wrong password succeeded"
         } catch {
             $cause = $_.Exception
-            if ($cause -is [System.Reflection.TargetInvocationException]) { $cause = $cause.InnerException }
+            while ($null -ne $cause.InnerException -and -not ($cause -is [System.IO.InvalidDataException])) { $cause = $cause.InnerException }
             if (-not ($cause -is [System.IO.InvalidDataException])) { throw }
         }
         $zip = Invoke-Internal $unpack @($bundle,$info,"pass-123")
@@ -77,7 +77,7 @@ try {
         throw "Traversal succeeded"
     } catch {
         $cause = $_.Exception
-        if ($cause -is [System.Reflection.TargetInvocationException]) { $cause = $cause.InnerException }
+        while ($null -ne $cause.InnerException -and -not ($cause -is [System.IO.InvalidDataException])) { $cause = $cause.InnerException }
         if (-not ($cause -is [System.IO.InvalidDataException])) { throw }
     }
     Write-Host "PASS traversal rejected"
