@@ -173,6 +173,74 @@ try {
     } finally { $ui.Dispose() }
     Write-Host "PASS default output UI and collapsed multiline advanced options"
 
+    # Form size and control layout regression for compact SFX and builder UI.
+    $form = [Activator]::CreateInstance($builderType,$true)
+    try {
+        $flagsInstance = [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic
+        $list = $builderType.GetField("sources",$flagsInstance).GetValue($form)
+        $toggle = $builderType.GetField("advancedToggle",$flagsInstance).GetValue($form)
+        $panel = $builderType.GetField("advancedPanel",$flagsInstance).GetValue($form)
+        $action = $builderType.GetField("create",$flagsInstance).GetValue($form)
+        if ($form.ClientSize.Width -gt 590 -or $form.ClientSize.Height -gt 390) {
+            throw "Builder collapsed window too large"
+        }
+        if ($list.Bounds.Bottom -ge $action.Bounds.Top -or $toggle.Bounds.Bottom -ge $action.Bounds.Top) {
+            throw "Builder controls overlap in collapsed view"
+        }
+        $setAdvanced = $builderType.GetMethod("SetAdvanced",$flagsInstance)
+        $setAdvanced.Invoke($form,[object[]]@($true)) | Out-Null
+        if ($form.ClientSize.Height -gt 545 -or $panel.Bounds.Bottom -gt $action.Top -or
+            $action.Bottom -gt $form.ClientSize.Height) {
+            throw "Builder advanced layout overflow/overlap"
+        }
+        $setAdvanced.Invoke($form,[object[]]@($false)) | Out-Null
+        if ($form.ClientSize.Height -gt 390) { throw "Builder failed to collapse" }
+    } finally { $form.Dispose() }
+    Write-Host "PASS compact builder size and advanced panel layout"
+
+    $infoType = $stub.GetType("DKSelfExtractor.PackageInfo")
+    $formType = $stub.GetType("DKSelfExtractor.ExtractorForm")
+    $fieldFlags = [System.Reflection.BindingFlags]::Instance -bor
+                  [System.Reflection.BindingFlags]::Public -bor
+                  [System.Reflection.BindingFlags]::NonPublic
+    $formCtor = $formType.GetConstructors($fieldFlags)[0]
+    foreach ($hasNote in @($false,$true)) {
+        foreach ($hasPassword in @($false,$true)) {
+            $info = [Activator]::CreateInstance($infoType,$true)
+            $infoType.GetField("Name",$fieldFlags).SetValue($info,"Test")
+            $infoType.GetField("Destination",$fieldFlags).SetValue($info,$dst)
+            $infoType.GetField("Note",$fieldFlags).SetValue($info, $(if($hasNote){"sample memo"}else{""}))
+            $infoType.GetField("Encrypted",$fieldFlags).SetValue($info,$hasPassword)
+            $inputs = [object[]]::new(1)
+            $inputs[0] = $info
+            $extractor = $formCtor.Invoke($inputs)
+            try {
+                $heightMax = 160 + $(if($hasNote){82}else{0}) + $(if($hasPassword){50}else{0})
+                if ($extractor.ClientSize.Width -gt 430 -or $extractor.ClientSize.Height -gt $heightMax) {
+                    throw "Extractor window too large for note=$hasNote password=$hasPassword"
+                }
+                $pwd = $formType.GetField("password",$fieldFlags).GetValue($extractor)
+                if ($hasPassword -ne ($null -ne $pwd)) { throw "Password field visibility mismatched" }
+                $noteFields = @($extractor.Controls | Where-Object {
+                    $_ -is [System.Windows.Forms.TextBox] -and $_.Multiline -and $_.ReadOnly
+                })
+                if ($noteFields.Count -ne [int]$hasNote) { throw "Memo field visibility mismatched" }
+                $button = $formType.GetField("extract",$fieldFlags).GetValue($extractor)
+                $statusLabel = $formType.GetField("status",$fieldFlags).GetValue($extractor)
+                $bar = $formType.GetField("progress",$fieldFlags).GetValue($extractor)
+                $theme = [System.Drawing.Color]::FromArgb(53,46,89)
+                if ($button.BackColor.ToArgb() -ne $theme.ToArgb() -or
+                    $bar.Bottom -gt $extractor.ClientSize.Height -or
+                    $button.Right -gt $extractor.ClientSize.Width -or
+                    $statusLabel.Bounds.IntersectsWith($button.Bounds) -or $bar.Visible) {
+                    throw "Extractor footer layout or theme mismatch"
+                }
+            } finally { $extractor.Dispose() }
+        }
+    }
+    Write-Host "PASS compact extractor layout for all memo/password combinations"
+
+
     # Verify the exact Windows Shell COM interface identity and that it can be
     # queried from the Windows FileOpenDialog coclass without opening a modal GUI.
     $pickerType = $builder.GetType("DKSelfExtractor.MultiFolderPicker")
