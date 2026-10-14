@@ -14,14 +14,15 @@ $stubExe = Join-Path $PSScriptRoot "src\Stub\bin\Release\DKSelfExtractor.Stub.ex
 $builder = [System.Reflection.Assembly]::LoadFrom($builderExe)
 $stub = [System.Reflection.Assembly]::LoadFrom($stubExe)
 $build = $builder.GetType("DKSelfExtractor.BuilderForm").GetMethod("Build",$flags)
-function Invoke-Build([string[]]$paths, [string]$exe, [string]$destination, [string]$memo, [string]$secret, [int]$level) {
-    $arguments = [object[]]::new(6)
+function Invoke-Build([string[]]$paths, [string]$exe, [string]$destination, [string]$memo, [string]$secret, [int]$level, [string]$caption = "") {
+    $arguments = [object[]]::new(7)
     $arguments[0] = $paths
     $arguments[1] = $exe
     $arguments[2] = $destination
     $arguments[3] = $memo
     $arguments[4] = $secret
     $arguments[5] = $level
+    $arguments[6] = $caption
     Invoke-Internal $build $arguments | Out-Null
 }
 $builderType = $builder.GetType("DKSelfExtractor.BuilderForm")
@@ -88,6 +89,19 @@ try {
     $plain = Join-Path $out "plain.exe"
     Invoke-Build ([string[]]@($src)) $plain $dst "" "" 2
     $plainInfo = Invoke-Internal $read @($plain)
+    $nameFlags = [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::NonPublic
+    if ($plainInfo.GetType().GetField("Name",$nameFlags).GetValue($plainInfo) -ne "plain") {
+        throw "Empty title did not fall back to EXE filename"
+    }
+    Write-Host "PASS default title uses generated EXE filename"
+    $customCaption = -join @([char]0xD14C,[char]0xC2A4,[char]0xD2B8,[char]0x0020,[char]0xC81C,[char]0xBAA9)
+    $customExe = Join-Path $out "caption.exe"
+    Invoke-Build ([string[]]@($src)) $customExe $dst "" "" 2 $customCaption
+    $customInfo = Invoke-Internal $read @($customExe)
+    if ($customInfo.GetType().GetField("Name",$nameFlags).GetValue($customInfo) -ne $customCaption) {
+        throw "Custom title not embedded in EXE"
+    }
+    Write-Host "PASS custom Unicode title embedded in generated EXE"
     $plainZip = Invoke-Internal $unpack @($plain,$plainInfo,"")
     try { Invoke-Internal $extract @($plainZip,$dst,$true,$null) | Out-Null }
     finally { Remove-Item $plainZip -Force -ErrorAction SilentlyContinue }
@@ -153,6 +167,10 @@ try {
         $uiPanel = $builderType.GetField("advancedPanel",$instanceFlags).GetValue($ui)
         if (-not [string]::Equals([string]$uiOutput.Text,$expectedPath,[System.StringComparison]::OrdinalIgnoreCase)) { throw "First source did not auto-fill EXE path: $($uiOutput.Text)" }
         if (-not $uiMemo.Multiline) { throw "Memo does not allow multiple lines" }
+        $uiTitle = $builderType.GetField("title",$instanceFlags).GetValue($ui)
+        if ($uiTitle.Text -ne "" -or $uiTitle.Parent -ne $uiPanel) {
+            throw "Title input is not blank or not placed in advanced settings"
+        }
         $theme = [System.Drawing.Color]::FromArgb(53,46,89)
         $uiCreate = $builderType.GetField("create",$instanceFlags).GetValue($ui)
         if ($uiCreate.BackColor.ToArgb() -ne $theme.ToArgb()) {
@@ -189,7 +207,7 @@ try {
         }
         $setAdvanced = $builderType.GetMethod("SetAdvanced",$flagsInstance)
         $setAdvanced.Invoke($form,[object[]]@($true)) | Out-Null
-        if ($form.ClientSize.Height -gt 545 -or $panel.Bounds.Bottom -gt $action.Top -or
+        if ($form.ClientSize.Height -gt 570 -or $panel.Bounds.Bottom -gt $action.Top -or
             $action.Bottom -gt $form.ClientSize.Height) {
             throw "Builder advanced layout overflow/overlap"
         }
@@ -219,6 +237,16 @@ try {
                 if ($extractor.ClientSize.Width -gt 430 -or $extractor.ClientSize.Height -gt $heightMax) {
                     throw "Extractor window too large for note=$hasNote password=$hasPassword"
                 }
+                $openAfter = $formType.GetField("openAfterExtract",$fieldFlags).GetValue($extractor)
+                $overwrite = $formType.GetField("overwrite",$fieldFlags).GetValue($extractor)
+                if (-not $openAfter.Checked -or -not $overwrite.Checked -or
+                    $openAfter.Top -ne $overwrite.Top -or
+                    $openAfter.Bounds.IntersectsWith($overwrite.Bounds)) {
+                    throw "Open-after-extract default or adjacent layout invalid"
+                }
+                if ($extractor.Text -ne "Test") { throw "Extractor title bar mismatch" }
+                $openAfter.Checked = $false
+                if ($openAfter.Checked) { throw "Open-after-extract cannot be turned off" }
                 $pwd = $formType.GetField("password",$fieldFlags).GetValue($extractor)
                 if ($hasPassword -ne ($null -ne $pwd)) { throw "Password field visibility mismatched" }
                 $noteFields = @($extractor.Controls | Where-Object {
