@@ -333,7 +333,7 @@ try {
         throw "Post-extract failure exit code was ignored"
     } catch {
         $cause = $_.Exception
-        while ($null -ne $cause.InnerException -and -not ($cause.Message -match "종료 코드")) {
+        while ($null -ne $cause.InnerException -and -not ($cause.Message -match "7")) {
             $cause = $cause.InnerException
         }
         if ($cause.Message -notmatch "7") { throw }
