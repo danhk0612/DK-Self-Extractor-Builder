@@ -253,6 +253,13 @@ try {
                 }
                 $openAfter = $formType.GetField("openAfterExtract",$fieldFlags).GetValue($extractor)
                 $overwrite = $formType.GetField("overwrite",$fieldFlags).GetValue($extractor)
+                $runAfter = $formType.GetField("runAfterExtract",$fieldFlags).GetValue($extractor)
+                if ($runAfter.Checked -or $runAfter.Enabled -or
+                    $runAfter.Top -ne $openAfter.Top -or
+                    $runAfter.Bounds.IntersectsWith($openAfter.Bounds) -or
+                    $runAfter.Right -gt $extractor.ClientSize.Width) {
+                    throw "Missing post command should show disabled and unchecked execute option"
+                }
                 if (-not $openAfter.Checked -or -not $overwrite.Checked -or
                     $openAfter.Top -ne $overwrite.Top -or
                     $openAfter.Bounds.IntersectsWith($overwrite.Bounds)) {
@@ -281,6 +288,32 @@ try {
         }
     }
     Write-Host "PASS compact extractor layout for all memo/password combinations"
+
+    $enabledInfo = [Activator]::CreateInstance($infoType,$true)
+    $infoType.GetField("Name",$fieldFlags).SetValue($enabledInfo,"Test")
+    $infoType.GetField("Destination",$fieldFlags).SetValue($enabledInfo,$dst)
+    $infoType.GetField("Note",$fieldFlags).SetValue($enabledInfo,"")
+    $infoType.GetField("PostCommand",$fieldFlags).SetValue($enabledInfo,"echo executed")
+    $enabledForm = $formCtor.Invoke(([object[]]@($enabledInfo)))
+    try {
+        $execute = $formType.GetField("runAfterExtract",$fieldFlags).GetValue($enabledForm)
+        $afterOpen = $formType.GetField("openAfterExtract",$fieldFlags).GetValue($enabledForm)
+        if (-not $execute.Enabled -or -not $execute.Checked -or
+            $execute.Top -ne $afterOpen.Top -or
+            $execute.Bounds.IntersectsWith($afterOpen.Bounds)) {
+            throw "Present post-command should show checked and enabled option"
+        }
+        $execute.Checked = $false
+        if ($execute.Checked) { throw "Post-command option cannot be turned off" }
+    } finally { $enabledForm.Dispose() }
+    $stubSource = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot "src\Stub\Program.cs"))
+    if (-not $stubSource.Contains("runAfterExtract.Enabled && runAfterExtract.Checked") -or
+        -not $stubSource.Contains("if (runCommand)")) {
+        throw "Post-command checkbox is not wired to extraction execution"
+    }
+    Write-Host "PASS conditional default-on post-command option and optional suppression"
+
+
 
 
 
