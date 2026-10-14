@@ -129,6 +129,68 @@ try {
     } finally { $ui.Dispose() }
     Write-Host "PASS default output UI and collapsed multiline advanced options"
 
+    # Verify the exact Windows Shell COM interface identity and that it can be
+    # queried from the Windows FileOpenDialog coclass without opening a modal GUI.
+    $pickerType = $builder.GetType("DKSelfExtractor.MultiFolderPicker")
+    $nestedFlags = [System.Reflection.BindingFlags]::NonPublic
+    $dialogInterface = $pickerType.GetNestedType("IFileOpenDialog",$nestedFlags)
+    $dialogClass = $pickerType.GetNestedType("FileOpenDialog",$nestedFlags)
+    $expectedIID = [Guid]"d57c7288-d4ad-4768-be02-9d969532d960"
+    if ($dialogInterface.GUID -ne $expectedIID) { throw "Wrong native IFileOpenDialog IID" }
+    $nativeDialog = [Activator]::CreateInstance($dialogClass,$true)
+    $unknown = [IntPtr]::Zero
+    $interfacePointer = [IntPtr]::Zero
+    try {
+        $unknown = [System.Runtime.InteropServices.Marshal]::GetIUnknownForObject($nativeDialog)
+        $hr = [System.Runtime.InteropServices.Marshal]::QueryInterface($unknown,[ref]$expectedIID,[ref]$interfacePointer)
+        if ($hr -ne 0 -or $interfacePointer -eq [IntPtr]::Zero) {
+            throw ("Native IFileOpenDialog COM QueryInterface failed: 0x{0:X8}" -f $hr)
+        }
+    } finally {
+        if ($interfacePointer -ne [IntPtr]::Zero) { [void][System.Runtime.InteropServices.Marshal]::Release($interfacePointer) }
+        if ($unknown -ne [IntPtr]::Zero) { [void][System.Runtime.InteropServices.Marshal]::Release($unknown) }
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($nativeDialog)
+    }
+    Write-Host "PASS native Windows IFileOpenDialog COM interface activation"
+
+    # Simulate an Explorer file-drop event, duplicate suppression, multi-item
+    # keyboard removal, and multi-item removal through the button's shared action.
+    $ui = [Activator]::CreateInstance($builderType,$true)
+    try {
+        $instanceFlags = [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic
+        $addMethod = $builderType.GetMethod("AddSources",$instanceFlags)
+        $list = $builderType.GetField("sources",$instanceFlags).GetValue($ui)
+        if (-not $ui.AllowDrop -or -not $list.AllowDrop -or -not $list.MultiSelect) {
+            throw "File-drop or multi-select not enabled on controls"
+        }
+        $dropData = [System.Windows.Forms.DataObject]::new()
+        $dropFiles = [string[]]@($src,$looseFile,$otherFolder)
+        $dropData.SetData([System.Windows.Forms.DataFormats]::FileDrop,[object]$dropFiles)
+        $drag = [System.Windows.Forms.DragEventArgs]::new(
+            $dropData,0,0,0,[System.Windows.Forms.DragDropEffects]::Copy,[System.Windows.Forms.DragDropEffects]::None)
+        $builderType.GetMethod("OnSourceDragEnter",$instanceFlags).Invoke($ui,[object[]]@($list,$drag)) | Out-Null
+        if ($drag.Effect -ne [System.Windows.Forms.DragDropEffects]::Copy) { throw "Explorer drag not accepted" }
+        $builderType.GetMethod("OnSourceDragDrop",$instanceFlags).Invoke($ui,[object[]]@($list,$drag)) | Out-Null
+        if ($list.Items.Count -ne 3) { throw "Explorer file and folder drop lost entries" }
+        $builderType.GetMethod("OnSourceDragDrop",$instanceFlags).Invoke($ui,[object[]]@($list,$drag)) | Out-Null
+        if ($list.Items.Count -ne 3) { throw "Duplicate paths were added on repeated drop" }
+        [void]$list.Handle
+        $list.Items[0].Selected = $true
+        $list.Items[1].Selected = $true
+        if ($list.SelectedItems.Count -ne 2) { throw "Ctrl/Shift-style multiple selection failed" }
+        $key = [System.Windows.Forms.KeyEventArgs]::new([System.Windows.Forms.Keys]::Delete)
+        $builderType.GetMethod("OnSourceKeyDown",$instanceFlags).Invoke($ui,[object[]]@($list,$key)) | Out-Null
+        if ($list.Items.Count -ne 1 -or -not $key.Handled) { throw "Delete did not remove all selected items" }
+        $addArgs = [object[]]::new(1)
+        $addArgs[0] = [string[]]@($src,$looseFile)
+        $addMethod.Invoke($ui,$addArgs) | Out-Null
+        $list.Items[0].Selected = $true
+        $list.Items[1].Selected = $true
+        $builderType.GetMethod("RemoveSelectedSources",$instanceFlags).Invoke($ui,$null) | Out-Null
+        if ($list.Items.Count -ne 1) { throw "Remove button did not remove all selected items" }
+    } finally { $ui.Dispose() }
+    Write-Host "PASS Explorer file/folder drop and Ctrl/Shift multiple removal via Delete/button"
+
     $tampered = Join-Path $out "tampered.exe"
     [System.IO.File]::Copy((Join-Path $out "bundle-2.exe"), $tampered)
     $tamperInfo = Invoke-Internal $read @($tampered)

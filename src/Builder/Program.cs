@@ -42,7 +42,7 @@ namespace DKSelfExtractor
             Font = new Font("Segoe UI", 10f);
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
-            AddLabel("파일 / 폴더", 22, 24, 250);
+            AddLabel("파일 / 폴더 (끌어놓기 가능)", 22, 24, 285);
             AddButton("파일 추가", 313, 15, 105, delegate
             {
                 using (var dialog = new OpenFileDialog {
@@ -60,11 +60,7 @@ namespace DKSelfExtractor
                     MessageBox.Show(this, error.Message, "폴더 선택 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             });
-            AddButton("선택 제거", 533, 15, 138, delegate
-            {
-                foreach (ListViewItem item in sources.SelectedItems.Cast<ListViewItem>().ToArray())
-                    sources.Items.Remove(item);
-            });
+            AddButton("선택 제거", 533, 15, 138, delegate { RemoveSelectedSources(); });
 
             sources = new ListView {
                 Bounds = new Rectangle(24, 57, 647, 166),
@@ -74,6 +70,15 @@ namespace DKSelfExtractor
                 BackColor = Color.White, ForeColor = Color.FromArgb(39, 55, 78),
                 Font = new Font("Segoe UI", 9.5f)
             };
+            // Explorer file/folder drops are handled both on the list and unused form surface.
+            AllowDrop = true;
+            sources.AllowDrop = true;
+            DragEnter += OnSourceDragEnter;
+            DragDrop += OnSourceDragDrop;
+            sources.DragEnter += OnSourceDragEnter;
+            sources.DragDrop += OnSourceDragDrop;
+            sources.KeyDown += OnSourceKeyDown;
+
             sources.Columns.Add("종류", 65);
             sources.Columns.Add("이름", 177);
             sources.Columns.Add("원본 경로", 382);
@@ -154,6 +159,33 @@ namespace DKSelfExtractor
             create.Top = expanded ? 594 : 423;
             status.Top = create.Bottom + 9;
             ClientSize = new Size(695, status.Bottom + 12);
+        }
+
+        private void OnSourceDragEnter(object sender, DragEventArgs e)
+        {
+            e.Effect = e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop)
+                ? DragDropEffects.Copy : DragDropEffects.None;
+        }
+
+        private void OnSourceDragDrop(object sender, DragEventArgs e)
+        {
+            if (e.Data == null || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            string[] paths = e.Data.GetData(DataFormats.FileDrop) as string[];
+            if (paths != null) AddSources(paths);
+        }
+
+        private void OnSourceKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Delete) return;
+            RemoveSelectedSources();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+
+        private void RemoveSelectedSources()
+        {
+            foreach (ListViewItem item in sources.SelectedItems.Cast<ListViewItem>().ToArray())
+                sources.Items.Remove(item);
         }
 
         private void AddSources(string[] paths)
