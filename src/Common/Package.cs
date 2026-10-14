@@ -293,9 +293,12 @@ namespace DKSelfExtractor
 
         internal static void Extract(string archivePath, string destination, bool overwrite, Action<int, int> progress)
         {
-            string root = Path.GetFullPath(Environment.ExpandEnvironmentVariables(destination)).TrimEnd('\\', '/');
+            string root = Path.GetFullPath(Environment.ExpandEnvironmentVariables(destination));
+            string driveRoot = Path.GetPathRoot(root);
+            if (!String.Equals(root, driveRoot, StringComparison.OrdinalIgnoreCase))
+                root = root.TrimEnd('\\', '/');
             if (String.IsNullOrWhiteSpace(root)) throw new ArgumentException("압축 해제 폴더를 입력하세요.");
-            string prefix = root + Path.DirectorySeparatorChar;
+            string prefix = root.EndsWith(Path.DirectorySeparatorChar.ToString()) ? root : root + Path.DirectorySeparatorChar;
             if (!Directory.Exists(root)) Directory.CreateDirectory(root);
             using (var file = File.OpenRead(archivePath))
             using (var archive = new ZipArchive(file, ZipArchiveMode.Read))
