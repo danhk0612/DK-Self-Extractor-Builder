@@ -10,7 +10,8 @@ namespace DKSelfExtractor
 {
     internal sealed class PackageInfo
     {
-        internal string Name, Destination, Note;
+        internal string Name, Destination, Note, PostCommand;
+        internal byte CommandShell;
         internal bool Encrypted;
         internal byte[] Salt, IV, Mac, AuthenticatedHeader;
         internal long Offset, Length;
@@ -113,12 +114,13 @@ namespace DKSelfExtractor
                 return kdf.GetBytes(64);
         }
 
-        private static byte[] Header(string name, string destination, string note, bool encrypted, byte[] salt, byte[] iv)
+        private static byte[] Header(string name, string destination, string note, bool encrypted, byte[] salt, byte[] iv,
+                                     byte commandShell, string postCommand)
         {
             using (var ms = new MemoryStream())
             using (var writer = new BinaryWriter(ms, Encoding.UTF8))
             {
-                writer.Write(1);
+                writer.Write(String.IsNullOrWhiteSpace(postCommand) ? 1 : 2);
                 writer.Write(name);
                 writer.Write(destination);
                 writer.Write(note);
@@ -127,6 +129,13 @@ namespace DKSelfExtractor
                 writer.Write(salt);
                 writer.Write((byte)iv.Length);
                 writer.Write(iv);
+                if (!String.IsNullOrWhiteSpace(postCommand))
+                {
+                    if (commandShell != 1 && commandShell != 2)
+                        throw new ArgumentException("지원되지 않는 명령줄 유형입니다.");
+                    writer.Write(commandShell);
+                    writer.Write(postCommand);
+                }
                 writer.Flush();
                 return ms.ToArray();
             }
@@ -156,13 +165,15 @@ namespace DKSelfExtractor
         }
 
         internal static void WriteExe(string stubFile, string zipFile, string output, string name,
-                                      string destination, string note, string password)
+                                      string destination, string note, string password,
+                                      byte commandShell, string postCommand)
         {
             bool encrypted = !String.IsNullOrEmpty(password);
             byte[] salt = encrypted ? Random(16) : new byte[0];
             byte[] iv = encrypted ? Random(16) : new byte[0];
             byte[] mac = new byte[0];
-            byte[] header = Header(name, destination, note, encrypted, salt, iv);
+            byte[] header = Header(name, destination, note, encrypted, salt, iv,
+                                   commandShell, postCommand);
             string cipherFile = null;
             string payload = zipFile;
             try
@@ -234,7 +245,9 @@ namespace DKSelfExtractor
                 using (var ms = new MemoryStream(bytes))
                 using (var meta = new BinaryReader(ms, Encoding.UTF8))
                 {
-                    if (meta.ReadInt32() != 1) throw new InvalidDataException("지원되지 않는 파일 형식입니다.");
+                    int format = meta.ReadInt32();
+                    if (format != 1 && format != 2)
+                        throw new InvalidDataException("지원되지 않는 파일 형식입니다.");
                     info.Name = meta.ReadString();
                     info.Destination = meta.ReadString();
                     info.Note = meta.ReadString();
@@ -245,6 +258,19 @@ namespace DKSelfExtractor
                     int ivLength = meta.ReadByte();
                     if (ivLength > 32) throw new InvalidDataException("잘못된 암호화 정보입니다.");
                     info.IV = meta.ReadBytes(ivLength);
+                    if (format == 2)
+                    {
+                        info.CommandShell = meta.ReadByte();
+                        info.PostCommand = meta.ReadString();
+                        if ((info.CommandShell != 1 && info.CommandShell != 2) ||
+                            String.IsNullOrWhiteSpace(info.PostCommand))
+                            throw new InvalidDataException("잘못된 작업 후 명령줄입니다.");
+                    }
+                    else
+                    {
+                        info.CommandShell = 0;
+                        info.PostCommand = "";
+                    }
                     info.AuthenticatedHeader = bytes.Take((int)ms.Position).ToArray();
                     int macLength = meta.ReadByte();
                     if (macLength > 32) throw new InvalidDataException("잘못된 암호화 정보입니다.");
