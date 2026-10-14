@@ -27,11 +27,13 @@ namespace DKSelfExtractor
         private readonly ComboBox compression;
         private readonly Button create;
         private readonly Label status;
+        private readonly Panel advancedPanel;
+        private readonly Button advancedToggle;
 
         internal BuilderForm()
         {
             Text = "DK Self Extractor Builder";
-            ClientSize = new Size(695, 592);
+            ClientSize = new Size(695, 552);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -93,24 +95,39 @@ namespace DKSelfExtractor
             AddLabel("압축 해제 기본 경로", 354);
             destination = AddInput(380, 647);
 
-            AddLabel("압축률", 423, 24, 220);
+            advancedToggle = AddButton("▸ 고급 설정", 24, 423, 647, delegate
+            {
+                SetAdvanced(!advancedPanel.Visible);
+            });
+            advancedToggle.TextAlign = ContentAlignment.MiddleLeft;
+
+            advancedPanel = new Panel {
+                Bounds = new Rectangle(24, 465, 647, 201),
+                BackColor = BackColor, Visible = false
+            };
+            Controls.Add(advancedPanel);
+
+            AddLabel("압축률", 4, 0, 225, advancedPanel);
             compression = new ComboBox {
-                Location = new Point(24, 450), Size = new Size(215, 30),
+                Location = new Point(0, 31), Size = new Size(233, 30),
                 DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 10f)
             };
             compression.Items.AddRange(new object[] { "무압축 (속도 우선)", "빠른 압축", "최적 압축 (용량 우선)" });
             compression.SelectedIndex = 2;
-            Controls.Add(compression);
+            advancedPanel.Controls.Add(compression);
 
-            AddLabel("암호 (선택)", 423, 251, 178);
-            password = AddInput(450, 191, 251);
+            AddLabel("암호 (선택)", 4, 247, 400, advancedPanel);
+            password = AddInput(31, 400, 247, advancedPanel);
             password.UseSystemPasswordChar = true;
 
-            AddLabel("메모 (선택)", 423, 454, 217);
-            note = AddInput(450, 217, 454);
+            AddLabel("메모 / 안내 문구 (선택)", 78, 0, 340, advancedPanel);
+            note = AddInput(105, 647, 0, advancedPanel);
+            note.Multiline = true;
+            note.ScrollBars = ScrollBars.Vertical;
+            note.Height = 85;
 
-            create = AddButton("EXE 생성", 24, 510, 647, delegate { BeginBuild(); });
+            create = AddButton("EXE 생성", 24, 466, 647, delegate { BeginBuild(); });
             create.Height = 43;
             create.BackColor = Color.FromArgb(48, 99, 224);
             create.ForeColor = Color.White;
@@ -118,9 +135,19 @@ namespace DKSelfExtractor
 
             status = new Label {
                 Text = "", ForeColor = Color.FromArgb(94, 109, 130),
-                Bounds = new Rectangle(24, 565, 647, 24), AutoEllipsis = true
+                Bounds = new Rectangle(24, 520, 647, 24), AutoEllipsis = true
             };
             Controls.Add(status);
+            SetAdvanced(false);
+        }
+
+        private void SetAdvanced(bool expanded)
+        {
+            advancedPanel.Visible = expanded;
+            advancedToggle.Text = expanded ? "▾ 고급 설정" : "▸ 고급 설정";
+            create.Top = expanded ? 680 : 466;
+            status.Top = create.Bottom + 10;
+            ClientSize = new Size(695, status.Bottom + 13);
         }
 
         private void AddSources(string[] paths)
@@ -141,11 +168,16 @@ namespace DKSelfExtractor
                 itemToAdd.Tag = full;
                 sources.Items.Add(itemToAdd);
             }
-            if (wasEmpty && sources.Items.Count > 0 && String.IsNullOrWhiteSpace(destination.Text))
+            if (wasEmpty && sources.Items.Count > 0)
             {
-                string first = (string)sources.Items[0].Tag;
+                if (String.IsNullOrWhiteSpace(output.Text))
+                    output.Text = DefaultExePath(SourcePaths());
+                if (String.IsNullOrWhiteSpace(destination.Text))
+                {
+                    string first = (string)sources.Items[0].Tag;
                 string folder = Directory.Exists(first) ? first : Path.GetDirectoryName(first);
-                destination.Text = @"%USERPROFILE%\Downloads\" + Path.GetFileName(folder.TrimEnd('\\', '/'));
+                    destination.Text = @"%USERPROFILE%\Downloads\" + Path.GetFileName(folder.TrimEnd('\\', '/'));
+                }
             }
         }
 
@@ -170,23 +202,23 @@ namespace DKSelfExtractor
             return Path.Combine(parent, name + ".exe");
         }
 
-        private void AddLabel(string label, int y, int x = 24, int width = 350)
+        private void AddLabel(string label, int y, int x = 24, int width = 350, Control parent = null)
         {
-            Controls.Add(new Label {
+            (parent ?? this).Controls.Add(new Label {
                 Text = label, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(64, 79, 105),
                 Location = new Point(x, y), Size = new Size(width, 24)
             });
         }
 
-        private TextBox AddInput(int y, int width, int x = 24)
+        private TextBox AddInput(int y, int width, int x = 24, Control parent = null)
         {
             var item = new TextBox {
                 Location = new Point(x, y), Size = new Size(width, 29),
                 Font = new Font("Segoe UI", 10f), BorderStyle = BorderStyle.FixedSingle,
                 BackColor = Color.White
             };
-            Controls.Add(item);
+            (parent ?? this).Controls.Add(item);
             return item;
         }
 
