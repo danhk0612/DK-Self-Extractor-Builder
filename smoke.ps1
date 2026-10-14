@@ -44,7 +44,7 @@ try {
     $pathArgs = [object[]]::new(1)
     $pathArgs[0] = [string[]]@($src)
     $suggested = $defaultExe.Invoke($null,$pathArgs)
-    $expectedPath = [string](Join-Path $folder "input.exe")
+    $expectedPath = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($src)),"input.exe")
     if (-not [string]::Equals([string]$suggested,$expectedPath,[System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Default EXE folder path mismatch actual=[$suggested] length=$(([string]$suggested).Length) expected=[$expectedPath] length=$($expectedPath.Length)"
     }
@@ -123,7 +123,7 @@ try {
         $uiOutput = $builderType.GetField("output",$instanceFlags).GetValue($ui)
         $uiMemo = $builderType.GetField("note",$instanceFlags).GetValue($ui)
         $uiPanel = $builderType.GetField("advancedPanel",$instanceFlags).GetValue($ui)
-        if ($uiOutput.Text -ne (Join-Path $folder "input.exe")) { throw "First source did not auto-fill EXE path" }
+        if (-not [string]::Equals([string]$uiOutput.Text,$expectedPath,[System.StringComparison]::OrdinalIgnoreCase)) { throw "First source did not auto-fill EXE path: $($uiOutput.Text)" }
         if (-not $uiMemo.Multiline) { throw "Memo does not allow multiple lines" }
         if ($uiPanel.Visible) { throw "Advanced options not collapsed" }
     } finally { $ui.Dispose() }
