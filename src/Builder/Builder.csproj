@@ -24,6 +24,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="MultiFolderPicker.cs" />
     <Compile Include="..\Common\Package.cs"><Link>Package.cs</Link></Compile>
     <EmbeddedResource Include="..\Stub\bin\Release\DKSelfExtractor.Stub.exe">
       <LogicalName>DKSelfExtractor.Stub.exe</LogicalName>
