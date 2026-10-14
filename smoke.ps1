@@ -14,8 +14,8 @@ $stubExe = Join-Path $PSScriptRoot "src\Stub\bin\Release\DKSelfExtractor.Stub.ex
 $builder = [System.Reflection.Assembly]::LoadFrom($builderExe)
 $stub = [System.Reflection.Assembly]::LoadFrom($stubExe)
 $build = $builder.GetType("DKSelfExtractor.BuilderForm").GetMethod("Build",$flags)
-function Invoke-Build([string[]]$paths, [string]$exe, [string]$destination, [string]$memo, [string]$secret, [int]$level, [string]$caption = "") {
-    $arguments = [object[]]::new(7)
+function Invoke-Build([string[]]$paths, [string]$exe, [string]$destination, [string]$memo, [string]$secret, [int]$level, [string]$caption = "", [byte]$shell = 1, [string]$command = "") {
+    $arguments = [object[]]::new(9)
     $arguments[0] = $paths
     $arguments[1] = $exe
     $arguments[2] = $destination
@@ -23,6 +23,8 @@ function Invoke-Build([string[]]$paths, [string]$exe, [string]$destination, [str
     $arguments[4] = $secret
     $arguments[5] = $level
     $arguments[6] = $caption
+    $arguments[7] = $shell
+    $arguments[8] = $command
     Invoke-Internal $build $arguments | Out-Null
 }
 $builderType = $builder.GetType("DKSelfExtractor.BuilderForm")
@@ -89,6 +91,12 @@ try {
     $plain = Join-Path $out "plain.exe"
     Invoke-Build ([string[]]@($src)) $plain $dst "" "" 2
     $plainInfo = Invoke-Internal $read @($plain)
+    $legacyShell = $plainInfo.GetType().GetField("CommandShell",([System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic))
+    $legacyCommand = $plainInfo.GetType().GetField("PostCommand",([System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic))
+    if ($legacyShell.GetValue($plainInfo) -ne 0 -or $legacyCommand.GetValue($plainInfo) -ne "") {
+        throw "Legacy v1 empty post-command was not loaded correctly"
+    }
+    Write-Host "PASS legacy version-1 SFX metadata compatibility"
     $nameFlags = [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::NonPublic
     if ($plainInfo.GetType().GetField("Name",$nameFlags).GetValue($plainInfo) -ne "plain") {
         throw "Empty title did not fall back to EXE filename"
@@ -167,6 +175,12 @@ try {
         $uiPanel = $builderType.GetField("advancedPanel",$instanceFlags).GetValue($ui)
         if (-not [string]::Equals([string]$uiOutput.Text,$expectedPath,[System.StringComparison]::OrdinalIgnoreCase)) { throw "First source did not auto-fill EXE path: $($uiOutput.Text)" }
         if (-not $uiMemo.Multiline) { throw "Memo does not allow multiple lines" }
+        $uiShell = $builderType.GetField("commandShell",$instanceFlags).GetValue($ui)
+        $uiCommand = $builderType.GetField("postCommand",$instanceFlags).GetValue($ui)
+        if ($uiShell.SelectedIndex -ne 0 -or -not $uiCommand.Multiline -or
+            $uiCommand.Parent -ne $uiPanel -or $uiCommand.Text -ne "") {
+            throw "Advanced post-extraction command inputs invalid"
+        }
         $uiTitle = $builderType.GetField("title",$instanceFlags).GetValue($ui)
         if ($uiTitle.Text -ne "" -or $uiTitle.Parent -ne $uiPanel) {
             throw "Title input is not blank or not placed in advanced settings"
@@ -207,7 +221,7 @@ try {
         }
         $setAdvanced = $builderType.GetMethod("SetAdvanced",$flagsInstance)
         $setAdvanced.Invoke($form,[object[]]@($true)) | Out-Null
-        if ($form.ClientSize.Height -gt 570 -or $panel.Bounds.Bottom -gt $action.Top -or
+        if ($form.ClientSize.Height -gt 735 -or $panel.Bounds.Bottom -gt $action.Top -or
             $action.Bottom -gt $form.ClientSize.Height) {
             throw "Builder advanced layout overflow/overlap"
         }
@@ -268,6 +282,63 @@ try {
     }
     Write-Host "PASS compact extractor layout for all memo/password combinations"
 
+
+
+    # End-to-end post-extract command verification on Windows CMD and PowerShell.
+    # Scripts run from the extraction directory and may span multiple lines.
+    $scriptRunner = $formType.GetMethod("RunPostCommand",(
+        [System.Reflection.BindingFlags]::Static -bor [System.Reflection.BindingFlags]::NonPublic))
+    $line = [Environment]::NewLine
+    $cmdScript = "if not exist sample.txt exit /b 13" + $line +
+                 "echo first> cmd-marker-1.txt" + $line +
+                 "echo second> cmd-marker-2.txt"
+    $psScript = "if (-not (Test-Path -LiteralPath 'sample.txt')) { exit 13 }" + $line +
+                "Set-Content -LiteralPath 'ps-marker-1.txt' -Value 'first'" + $line +
+                "Set-Content -LiteralPath 'ps-marker-2.txt' -Value 'second'"
+    foreach ($test in @(
+        @{ Shell = [byte]1; Command = $cmdScript; Expected = "cmd" },
+        @{ Shell = [byte]2; Command = $psScript; Expected = "ps" }
+    )) {
+        $scriptExe = Join-Path $out ($test.Expected + "-script.exe")
+        Invoke-Build ([string[]]@($src)) $scriptExe $dst "" "pass-123" 2 "" $test.Shell $test.Command
+        $scriptInfo = Invoke-Internal $read @($scriptExe)
+        if ($scriptInfo.GetType().GetField("CommandShell",$fieldFlags).GetValue($scriptInfo) -ne $test.Shell -or
+            $scriptInfo.GetType().GetField("PostCommand",$fieldFlags).GetValue($scriptInfo) -ne $test.Command) {
+            throw "Version 2 post-command metadata roundtrip failed for $($test.Expected)"
+        }
+        $scriptZip = Invoke-Internal $unpack @($scriptExe,$scriptInfo,"pass-123")
+        $scriptDestination = Join-Path $folder ($test.Expected + "-extract")
+        try {
+            # The runner must have the extraction result available first.
+            Invoke-Internal $extract @($scriptZip,$scriptDestination,$true,$null) | Out-Null
+            $scriptArgs = [object[]]::new(2)
+            $scriptArgs[0] = $scriptInfo
+            $scriptArgs[1] = $scriptDestination
+            $scriptRunner.Invoke($null,$scriptArgs) | Out-Null
+            if (-not (Test-Path (Join-Path $scriptDestination ($test.Expected + "-marker-1.txt"))) -or
+                -not (Test-Path (Join-Path $scriptDestination ($test.Expected + "-marker-2.txt")))) {
+                throw "Multi-line post-extract command did not run for $($test.Expected)"
+            }
+            $scriptRunner.Invoke($null,([object[]]@($plainInfo,$scriptDestination))) | Out-Null
+        } finally { Remove-Item $scriptZip -Force -ErrorAction SilentlyContinue }
+    }
+    Write-Host "PASS CMD and PowerShell multiline post-extract commands and v2 signed metadata"
+
+    # Nonzero exit code must be reported, not treated as success.
+    $failedExe = Join-Path $out "failure-script.exe"
+    Invoke-Build ([string[]]@($src)) $failedExe $dst "" "" 2 "" ([byte]1) "exit /b 7"
+    $failedInfo = Invoke-Internal $read @($failedExe)
+    try {
+        $scriptRunner.Invoke($null,([object[]]@($failedInfo,$dst))) | Out-Null
+        throw "Post-extract failure exit code was ignored"
+    } catch {
+        $cause = $_.Exception
+        while ($null -ne $cause.InnerException -and -not ($cause.Message -match "종료 코드")) {
+            $cause = $cause.InnerException
+        }
+        if ($cause.Message -notmatch "7") { throw }
+    }
+    Write-Host "PASS nonzero CMD exit code detected"
 
     # Verify the exact Windows Shell COM interface identity and that it can be
     # queried from the Windows FileOpenDialog coclass without opening a modal GUI.
