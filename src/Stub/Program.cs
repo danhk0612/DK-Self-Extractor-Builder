@@ -176,13 +176,14 @@ namespace DKSelfExtractor
                                    "WindowsPowerShell", "v1.0", "powershell.exe");
                 string arguments = info.CommandShell == 1
                     ? "/D /S /C \"\"" + scriptPath + "\"\""
-                    : "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + scriptPath + "\"";
+                    : "-NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath + "\"";
                 var start = new ProcessStartInfo {
                     FileName = executable,
                     Arguments = arguments,
                     WorkingDirectory = Path.GetFullPath(Environment.ExpandEnvironmentVariables(destination)),
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = false,
+                    WindowStyle = ProcessWindowStyle.Normal
                 };
                 using (var process = Process.Start(start))
                 {
